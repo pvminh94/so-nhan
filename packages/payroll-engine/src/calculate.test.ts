@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, attendanceTemplate, buildJournal, calculatePayslip, insuranceCeiling, parseAttendanceCsv } from "./index";
+import { annualLeaveEntitlement, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, insuranceCeiling, parseAttendanceCsv } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -162,5 +162,35 @@ describe("phiếu lương Việt Nam", () => {
     });
     expect(result.warnings[0]).toContain("50");
     expect(result.net).toBeGreaterThan(0);
+  });
+});
+
+describe("đối chiếu hai kỳ", () => {
+  const base = { fullName: "A", net: 10_000_000, workedDays: 22, otHours: 0, dependents: 0, baseSalary: 12_000_000 };
+
+  it("cùng số liệu thì không có biến động chưa giải thích", () => {
+    const result = comparePayroll([{ code: "NV001", ...base }], [{ code: "NV001", ...base }]);
+    expect(result.unexplained).toBe(0);
+    expect(result.changed).toBe(0);
+  });
+
+  it("đổi ngày công thì giải thích được, không tính là chưa rõ", () => {
+    const result = comparePayroll(
+      [{ code: "NV001", ...base, workedDays: 20, net: 9_000_000 }],
+      [{ code: "NV001", ...base }],
+    );
+    expect(result.unexplained).toBe(0);
+    expect(result.rows[0]?.reasons[0]).toContain("Ngày công");
+  });
+
+  it("thực nhận đổi mà đầu vào không đổi thì đánh dấu chưa giải thích", () => {
+    const result = comparePayroll([{ code: "NV001", ...base, net: 9_500_000 }], [{ code: "NV001", ...base }]);
+    expect(result.unexplained).toBe(1);
+  });
+
+  it("công đổi mà phiếu không đổi thì bắt tính lại", () => {
+    const result = comparePayroll([{ code: "NV001", ...base, workedDays: 20 }], [{ code: "NV001", ...base }]);
+    expect(result.unexplained).toBe(1);
+    expect(result.rows[0]?.reasons.join(" ")).toContain("tính lại");
   });
 });

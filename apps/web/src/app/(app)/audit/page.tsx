@@ -14,6 +14,7 @@ const actionLabel: Record<string, string> = {
   LOCK_PAYROLL: "Khóa kỳ lương",
   EXPORT_BANK: "Xuất file ngân hàng",
   EXPORT_JOURNAL: "Xuất bút toán",
+  VIEW_PAYSLIP: "Xem phiếu lương",
   IMPORT_ATTENDANCE: "Nhập công",
   OFFBOARD: "Nghỉ việc",
 };

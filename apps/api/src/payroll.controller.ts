@@ -22,6 +22,11 @@ export class PayrollController {
     return this.payroll.run(req.user!, id);
   }
 
+  @Get("payroll/runs/:id/variance")
+  variance(@Req() req: RequestWithUser, @Param("id") id: string) {
+    return this.payroll.variance(req.user!, id);
+  }
+
   @Post("payroll/runs")
   calculate(@Req() req: RequestWithUser, @Body() body: { year?: number; month?: number }) {
     return this.payroll.calculate(req.user!, Number(body.year), Number(body.month));

@@ -26,6 +26,13 @@ type Run = {
   totals: { gross: number; net: number; pit: number; insuranceEmployee: number; insuranceEmployer: number };
   payslips: Slip[];
 };
+type Variance = {
+  previous: { id: string; year: number; month: number } | null;
+  unexplained: number;
+  changed: number;
+  delta: number;
+  rows: Array<{ code: string; fullName: string; previousNet: number; currentNet: number; delta: number; reasons: string[]; unexplained: boolean }>;
+};
 
 export default async function PayrollDetail({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireMe();
@@ -33,6 +40,10 @@ export default async function PayrollDetail({ params }: { params: Promise<{ id: 
   const run = await api<Run>(`/api/payroll/runs/${id}`);
   if (!run) return null;
   const canRun = me.role === "ADMIN" || me.role === "PAYROLL";
+  const canCompare = me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL";
+  const variance = canCompare && (run.status === "CALCULATED" || run.status === "LOCKED")
+    ? await api<Variance>(`/api/payroll/runs/${id}/variance`)
+    : null;
   return (
     <>
       <p className="muted"><Link href="/payroll">Lương</Link> / {String(run.month).padStart(2, "0")}/{run.year}</p>
@@ -50,6 +61,33 @@ export default async function PayrollDetail({ params }: { params: Promise<{ id: 
         <article className="card"><div className="k">TNCN</div><div className="num" style={{ fontSize: 22 }}>{vnd(run.totals.pit)}</div></article>
         <article className="card"><div className="k">Thực nhận</div><div className="num" style={{ fontSize: 22 }}>{vnd(run.totals.net)}</div></article>
       </div>
+      {variance ? (
+        <article className="card" style={{ marginTop: 12 }}>
+          <h2>Đối chiếu kỳ trước</h2>
+          {!variance.previous ? <p className="muted">Chưa có kỳ liền trước đã tính. Cổng khóa sổ cần hai kỳ và không còn dòng chưa giải thích.</p> : null}
+          {variance.previous ? (
+            <>
+              <p>So với {String(variance.previous.month).padStart(2, "0")}/{variance.previous.year}: {variance.changed} người đổi thực nhận, chênh {vnd(variance.delta)}.</p>
+              <p className={variance.unexplained ? "warn" : "ok"}>{variance.unexplained ? `${variance.unexplained} dòng chưa giải thích` : "Không còn biến động chưa giải thích"}</p>
+              {variance.rows.length ? (
+                <table>
+                  <thead><tr><th>Người</th><th>Kỳ trước</th><th>Kỳ này</th><th>Lý do</th></tr></thead>
+                  <tbody>
+                    {variance.rows.map((row) => (
+                      <tr key={row.code}>
+                        <td>{row.fullName}</td>
+                        <td className="money">{vnd(row.previousNet)}</td>
+                        <td className="money">{vnd(row.currentNet)}</td>
+                        <td>{row.reasons.join("; ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+            </>
+          ) : null}
+        </article>
+      ) : null}
       <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
         {run.payslips.map((slip) => (
           <article className="card" key={slip.id}>

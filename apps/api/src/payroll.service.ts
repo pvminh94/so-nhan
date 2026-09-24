@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { buildJournal, calculatePayslip, statutorySnapshot, type WageRegion } from "@so-nhan/payroll-engine";
+import { buildJournal, calculatePayslip, comparePayroll, statutorySnapshot, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
 import type { AuthUser } from "./common";
 import { SALARY_ROLES } from "./common";
 import { PrismaService } from "./prisma.service";
@@ -40,6 +40,11 @@ export class PayrollService {
       },
     });
     if (!row) throw new NotFoundException("Không thấy kỳ lương");
+    if (row.status === "CALCULATED" || row.status === "LOCKED") {
+      await this.prisma.auditLog.create({
+        data: { userId: user.id, action: "VIEW_PAYSLIP", entity: "PayrollRun", entityId: id },
+      });
+    }
     const ownOnly = !SALARY_ROLES.includes(user.role);
     const payslips = row.payslips
       .filter((slip) => !ownOnly || slip.employeeId === user.employeeId)
@@ -233,6 +238,47 @@ export class PayrollService {
       data: { userId: user.id, action: "EXPORT_JOURNAL", entity: "PayrollRun", entityId: id },
     });
     return csvLines.join("\n");
+  }
+
+  async variance(user: AuthUser, id: string) {
+    this.requireRole(user, SALARY_ROLES);
+    const row = await this.prisma.payrollRun.findUnique({
+      where: { id },
+      include: { payslips: { include: { employee: true } } },
+    });
+    if (!row) throw new NotFoundException("Không thấy kỳ lương");
+    const previousMonth = row.month === 1 ? 12 : row.month - 1;
+    const previousYear = row.month === 1 ? row.year - 1 : row.year;
+    const previous = await this.prisma.payrollRun.findFirst({
+      where: {
+        legalEntityId: row.legalEntityId,
+        year: previousYear,
+        month: previousMonth,
+        status: { in: ["CALCULATED", "LOCKED"] },
+      },
+      include: { payslips: { include: { employee: true } } },
+    });
+    if (!previous) return { previous: null, unexplained: 0, changed: 0, delta: 0, rows: [] };
+    const times = await this.prisma.timeEntry.findMany({
+      where: { OR: [{ year: row.year, month: row.month }, { year: previousYear, month: previousMonth }] },
+    });
+    const snap = (run: typeof row, year: number, month: number): VarianceSlip[] =>
+      run.payslips.map((slip) => {
+        const time = times.find((item) => item.employeeId === slip.employeeId && item.year === year && item.month === month);
+        return {
+          code: slip.employee.code,
+          fullName: slip.employee.fullName,
+          net: slip.net,
+          workedDays: time?.workedDays ?? 22,
+          otHours: (time?.otWeekdayHours ?? 0) + (time?.otWeekendHours ?? 0) + (time?.otHolidayHours ?? 0) + (time?.nightHours ?? 0),
+          dependents: slip.employee.dependents,
+          baseSalary: slip.employee.baseSalary,
+        };
+      });
+    return {
+      previous: { id: previous.id, year: previousYear, month: previousMonth },
+      ...comparePayroll(snap(row, row.year, row.month), snap(previous, previousYear, previousMonth)),
+    };
   }
 
   private async readyRun(user: AuthUser, id: string) {
