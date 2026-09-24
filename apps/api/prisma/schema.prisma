@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  HR
+  PAYROLL
+  MANAGER
+  EMPLOYEE
+  AUDITOR
+}
+
+enum EmployeeStatus {
+  PROBATION
+  ACTIVE
+  TERMINATED
+}
+
+enum ContractType {
+  DEFINITE
+  INDEFINITE
+  PROBATION
+}
+
+enum WageRegion {
+  I
+  II
+  III
+  IV
+}
+
+enum LeaveType {
+  ANNUAL
+  UNPAID
+  SICK
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PayrollStatus {
+  CALCULATED
+  LOCKED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  role         Role
+  fullName     String
+  employeeId   String?    @unique
+  employee     Employee?  @relation(fields: [employeeId], references: [id])
+  sessions     Session[]
+  audits       AuditLog[]
+  createdAt    DateTime   @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model LegalEntity {
+  id          String       @id @default(cuid())
+  name        String
+  taxCode     String       @unique
+  region      WageRegion
+  address     String
+  departments Department[]
+  employees   Employee[]
+  payrollRuns PayrollRun[]
+}
+
+model Department {
+  id            String       @id @default(cuid())
+  legalEntityId String
+  legalEntity   LegalEntity  @relation(fields: [legalEntityId], references: [id])
+  name          String
+  parentId      String?
+  parent        Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children      Department[] @relation("DeptTree")
+  employees     Employee[]
+}
+
+model Employee {
+  id              String         @id @default(cuid())
+  code            String         @unique
+  fullName        String
+  email           String?        @unique
+  phone           String?
+  citizenId       String?
+  personalTaxCode String?
+  bankName        String?
+  bankAccount     String?
+  hireDate        DateTime
+  status          EmployeeStatus
+  jobTitle        String
+  contractType    ContractType
+  contractStart   DateTime
+  contractEnd     DateTime?
+  baseSalary      Int
+  insuranceSalary Int
+  dependents      Int            @default(0)
+  region          WageRegion
+  legalEntityId   String
+  legalEntity     LegalEntity    @relation(fields: [legalEntityId], references: [id])
+  departmentId    String
+  department      Department     @relation(fields: [departmentId], references: [id])
+  managerId       String?
+  manager         Employee?      @relation("Reports", fields: [managerId], references: [id])
+  reports         Employee[]     @relation("Reports")
+  user            User?
+  leaveBalances   LeaveBalance[]
+  leaveRequests   LeaveRequest[] @relation("LeaveOwner")
+  approvals       LeaveRequest[] @relation("LeaveApprover")
+  timeEntries     TimeEntry[]
+  payslips        Payslip[]
+}
+
+model LeaveBalance {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  year       Int
+  entitled   Float
+  used       Float    @default(0)
+
+  @@unique([employeeId, year])
+}
+
+model LeaveRequest {
+  id         String      @id @default(cuid())
+  employeeId String
+  employee   Employee    @relation("LeaveOwner", fields: [employeeId], references: [id])
+  type       LeaveType
+  startDate  DateTime
+  endDate    DateTime
+  days       Float
+  reason     String
+  status     LeaveStatus @default(PENDING)
+  approverId String?
+  approver   Employee?   @relation("LeaveApprover", fields: [approverId], references: [id])
+  decidedAt  DateTime?
+  createdAt  DateTime    @default(now())
+}
+
+model TimeEntry {
+  id             String   @id @default(cuid())
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  year           Int
+  month          Int
+  standardDays   Int
+  workedDays     Float
+  unpaidDays     Float    @default(0)
+  otWeekdayHours Float    @default(0)
+  otWeekendHours Float    @default(0)
+  otHolidayHours Float    @default(0)
+  nightHours     Float    @default(0)
+  locked         Boolean  @default(false)
+
+  @@unique([employeeId, year, month])
+}
+
+model PayrollRun {
+  id            String        @id @default(cuid())
+  legalEntityId String
+  legalEntity   LegalEntity   @relation(fields: [legalEntityId], references: [id])
+  year          Int
+  month         Int
+  status        PayrollStatus @default(CALCULATED)
+  ruleVersion   String
+  createdAt     DateTime      @default(now())
+  lockedAt      DateTime?
+  payslips      Payslip[]
+
+  @@unique([legalEntityId, year, month])
+}
+
+model Payslip {
+  id                String       @id @default(cuid())
+  runId             String
+  run               PayrollRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee     @relation(fields: [employeeId], references: [id])
+  gross             Int
+  insuranceBase     Int
+  insuranceEmployee Int
+  insuranceEmployer Int
+  pit               Int
+  net               Int
+  taxableEarnings   Int
+  assessableIncome  Int
+  warnings          String[]
+  lines             PayslipLine[]
+
+  @@unique([runId, employeeId])
+}
+
+model PayslipLine {
+  id           String   @id @default(cuid())
+  payslipId    String
+  payslip      Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  code         String
+  name         String
+  amount       Int
+  formula      String
+  pitTreatment String
+  sort         Int
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

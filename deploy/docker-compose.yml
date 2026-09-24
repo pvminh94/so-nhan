@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: hrms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: hrms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "127.0.0.1:6379:6379"
+  api:
+    image: node:22-bookworm-slim
+    working_dir: /repo
+    volumes:
+      - ../:/repo
+    command: sh -c "npm ci && npm run db:push -w @so-nhan/api && npm run db:seed -w @so-nhan/api && npm run dev:api"
+    environment:
+      DATABASE_URL: postgresql://hrms:${POSTGRES_PASSWORD:-change-me}@postgres:5432/hrms
+      PORT: 4000
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "4000:4000"
+  web:
+    image: node:22-bookworm-slim
+    working_dir: /repo
+    volumes:
+      - ../:/repo
+    command: sh -c "npm run dev:web"
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

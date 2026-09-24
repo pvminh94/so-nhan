@@ -1,0 +1,20 @@
+{
+  "name": "so-nhan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sổ Nhân — HRMS thương mại cho quy mô khoảng 5.000 nhân sự",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test -w @so-nhan/payroll-engine",
+    "dev:api": "npm run dev -w @so-nhan/api",
+    "dev:web": "npm run dev -w @so-nhan/web",
+    "db:push": "npm run db:push -w @so-nhan/api",
+    "db:seed": "npm run db:seed -w @so-nhan/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
