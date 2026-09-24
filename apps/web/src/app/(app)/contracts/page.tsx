@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ContractRemind } from "@/components/contract-remind";
 import { api, dateVN, requireMe } from "@/lib/api";
 
 type Contract = {
@@ -19,15 +20,16 @@ const typeLabel: Record<string, string> = {
 };
 
 export default async function ContractsPage() {
-  await requireMe();
+  const me = await requireMe();
   const rows = await api<Contract[]>("/api/contracts");
   return (
     <>
       <div className="top">
         <div>
           <h1>Hợp đồng</h1>
-          <p className="sub">Hết hạn trong 60 ngày được tô đậm. Không xác định thời hạn không có ngày kết thúc.</p>
+          <p className="sub">Hết hạn trong 60 ngày được tô đậm. Nhắc hạn gửi cho nhân sự, không gửi lại trong 7 ngày.</p>
         </div>
+        <ContractRemind canRemind={me.role === "ADMIN" || me.role === "HR"} />
       </div>
       <article className="card">
         <table>

@@ -399,6 +399,45 @@ export class HrService {
     return this.attendancePeriod(month);
   }
 
+  async remindContractsFor(user: AuthUser) {
+    this.requireRole(user, ["ADMIN", "HR"]);
+    return this.remindContracts();
+  }
+
+  async remindContracts() {
+    const now = new Date();
+    const soon = new Date(now);
+    soon.setDate(soon.getDate() + 60);
+    const past = new Date(now);
+    past.setDate(past.getDate() - 30);
+    const [employees, hr] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { status: { not: "TERMINATED" }, contractEnd: { gte: past, lte: soon } },
+        include: { department: true },
+      }),
+      this.prisma.user.findMany({ where: { role: { in: ["HR", "ADMIN"] } }, select: { id: true } }),
+    ]);
+    const since = new Date(now.getTime() - 7 * 86_400_000);
+    let sent = 0;
+    for (const employee of employees) {
+      if (!employee.contractEnd) continue;
+      const href = `/employees/${employee.id}`;
+      const existing = await this.prisma.notification.findFirst({
+        where: { href, title: { in: ["Hợp đồng sắp hết", "Hợp đồng đã hết hạn"] }, createdAt: { gte: since } },
+      });
+      if (existing) continue;
+      const daysLeft = Math.ceil((employee.contractEnd.getTime() - now.getTime()) / 86_400_000);
+      await this.notify(
+        hr.map((item) => item.id),
+        daysLeft < 0 ? "Hợp đồng đã hết hạn" : "Hợp đồng sắp hết",
+        `${employee.fullName} (${employee.code}) · ${employee.department.name} · ${daysLeft} ngày`,
+        href,
+      );
+      sent += 1;
+    }
+    return { due: employees.length, sent };
+  }
+
   async contracts() {
     const rows = await this.prisma.employee.findMany({
       where: { status: { not: "TERMINATED" } },

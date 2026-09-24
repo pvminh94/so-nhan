@@ -85,6 +85,11 @@ export class HrController {
     return this.hr.contracts();
   }
 
+  @Post("contracts/remind")
+  remindContracts(@Req() req: RequestWithUser) {
+    return this.hr.remindContractsFor(req.user!);
+  }
+
   @Post("employees/:id/dependents")
   saveDependents(
     @Req() req: RequestWithUser,

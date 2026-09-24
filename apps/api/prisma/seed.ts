@@ -192,7 +192,7 @@ function person(
     departmentId,
     hireDate: new Date(hireDate),
     contractStart: new Date(hireDate),
-    contractEnd: contractType === "INDEFINITE" ? null : new Date("2027-09-30"),
+    contractEnd: contractType === "INDEFINITE" ? null : contractType === "PROBATION" ? new Date("2026-11-15") : new Date("2027-09-30"),
     baseSalary,
     dependents,
     status,
