@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, insuranceCeiling, parseAttendanceCsv } from "./index";
+import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, insuranceCeiling, parseAttendanceCsv } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -162,6 +162,45 @@ describe("phiếu lương Việt Nam", () => {
     });
     expect(result.warnings[0]).toContain("50");
     expect(result.net).toBeGreaterThan(0);
+  });
+});
+
+describe("khóa kỳ công", () => {
+  it("thiếu công thì không khóa và không tính lương", () => {
+    const decision = attendanceLockDecision({
+      activeCodes: ["NV001", "NV002"],
+      entries: [{ code: "NV001", locked: false }],
+      payrollLocked: false,
+    });
+    expect(decision.missing).toEqual(["NV002"]);
+    expect(decision.canLock).toBe(false);
+    expect(decision.canCalculate).toBe(false);
+  });
+
+  it("đủ công đang mở thì được khóa, chưa được tính", () => {
+    const decision = attendanceLockDecision({
+      activeCodes: ["NV001"],
+      entries: [{ code: "NV001", locked: false }],
+      payrollLocked: false,
+    });
+    expect(decision.canLock).toBe(true);
+    expect(decision.canCalculate).toBe(false);
+  });
+
+  it("đã khóa hết thì tính được, lương đã khóa thì không mở lại", () => {
+    const openPayroll = attendanceLockDecision({
+      activeCodes: ["NV001"],
+      entries: [{ code: "NV001", locked: true }],
+      payrollLocked: false,
+    });
+    expect(openPayroll.canCalculate).toBe(true);
+    expect(openPayroll.canUnlock).toBe(true);
+    const closedPayroll = attendanceLockDecision({
+      activeCodes: ["NV001"],
+      entries: [{ code: "NV001", locked: true }],
+      payrollLocked: true,
+    });
+    expect(closedPayroll.canUnlock).toBe(false);
   });
 });
 

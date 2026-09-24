@@ -65,6 +65,21 @@ export class HrController {
     return this.hr.importAttendance(req.user!, body.month ?? "2026-09", body.csv ?? "");
   }
 
+  @Get("attendance/period")
+  attendancePeriod(@Query("month") month = "2026-09") {
+    return this.hr.attendancePeriod(month);
+  }
+
+  @Post("attendance/lock")
+  lockAttendance(@Req() req: RequestWithUser, @Body() body: { month?: string }) {
+    return this.hr.lockAttendance(req.user!, body.month ?? "2026-09");
+  }
+
+  @Post("attendance/unlock")
+  unlockAttendance(@Req() req: RequestWithUser, @Body() body: { month?: string }) {
+    return this.hr.unlockAttendance(req.user!, body.month ?? "2026-09");
+  }
+
   @Get("contracts")
   contracts() {
     return this.hr.contracts();

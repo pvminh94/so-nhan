@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { LeaveStatus, LeaveType, type Role } from "@prisma/client";
-import { annualLeaveEntitlement, attendanceTemplate, parseAttendanceCsv } from "@so-nhan/payroll-engine";
+import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, parseAttendanceCsv } from "@so-nhan/payroll-engine";
 import { canSeeSalary, type AuthUser } from "./common";
 import { PrismaService } from "./prisma.service";
 
@@ -281,6 +281,47 @@ export class HrService {
     return attendanceTemplate();
   }
 
+  async attendancePeriod(month: string) {
+    const { year, monthNumber } = parseMonth(month);
+    const [employees, entries, run] = await Promise.all([
+      this.prisma.employee.findMany({ where: { status: { not: "TERMINATED" } }, select: { code: true } }),
+      this.prisma.timeEntry.findMany({ where: { year, month: monthNumber }, include: { employee: true } }),
+      this.prisma.payrollRun.findFirst({ where: { year, month: monthNumber } }),
+    ]);
+    return {
+      month,
+      payrollStatus: run?.status ?? null,
+      ...attendanceLockDecision({
+        activeCodes: employees.map((item) => item.code),
+        entries: entries.map((item) => ({ code: item.employee.code, locked: item.locked })),
+        payrollLocked: run?.status === "LOCKED",
+      }),
+    };
+  }
+
+  async lockAttendance(user: AuthUser, month: string) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL"]);
+    const period = await this.attendancePeriod(month);
+    if (period.payrollLocked) throw new BadRequestException("Kỳ lương đã khóa, không sửa công");
+    if (period.missing.length) throw new BadRequestException(`Thiếu công: ${period.missing.join(", ")}`);
+    if (period.periodLocked) return period;
+    const { year, monthNumber } = parseMonth(month);
+    await this.prisma.timeEntry.updateMany({ where: { year, month: monthNumber }, data: { locked: true } });
+    await this.audit(user, "LOCK_ATTENDANCE", "TimeEntry", month);
+    return this.attendancePeriod(month);
+  }
+
+  async unlockAttendance(user: AuthUser, month: string) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL"]);
+    const period = await this.attendancePeriod(month);
+    if (period.payrollLocked) throw new BadRequestException("Kỳ lương đã khóa, không mở công");
+    if (!period.periodLocked) return period;
+    const { year, monthNumber } = parseMonth(month);
+    await this.prisma.timeEntry.updateMany({ where: { year, month: monthNumber }, data: { locked: false } });
+    await this.audit(user, "UNLOCK_ATTENDANCE", "TimeEntry", month);
+    return this.attendancePeriod(month);
+  }
+
   async contracts() {
     const rows = await this.prisma.employee.findMany({
       where: { status: { not: "TERMINATED" } },
@@ -384,6 +425,14 @@ export class HrService {
   private audit(user: AuthUser, action: string, entity: string, entityId: string) {
     return this.prisma.auditLog.create({ data: { userId: user.id, action, entity, entityId } });
   }
+}
+
+function parseMonth(month: string) {
+  const [yearText, monthText] = month.split("-");
+  const year = Number(yearText);
+  const monthNumber = Number(monthText);
+  if (!year || monthNumber < 1 || monthNumber > 12) throw new BadRequestException("Tháng không hợp lệ");
+  return { year, monthNumber };
 }
 
 function maskAccount(value: string | null): string | null {

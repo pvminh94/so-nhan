@@ -101,6 +101,7 @@ async function main() {
         workedDays: 22,
         unpaidDays: 0,
         ...special,
+        locked: true,
       },
     });
   }

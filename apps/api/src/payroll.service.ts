@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { buildJournal, calculatePayslip, comparePayroll, statutorySnapshot, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
+import { attendanceLockDecision, buildJournal, calculatePayslip, comparePayroll, statutorySnapshot, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
 import type { AuthUser } from "./common";
 import { SALARY_ROLES } from "./common";
 import { PrismaService } from "./prisma.service";
@@ -98,6 +98,7 @@ export class PayrollService {
       where: { legalEntityId_year_month: { legalEntityId: entity.id, year, month } },
     });
     if (existing?.status === "LOCKED") throw new BadRequestException("Kỳ lương đã khóa, không tính lại");
+    await this.assertAttendanceLocked(entity.id, year, month);
     if (existing?.status === "QUEUED" || existing?.status === "CALCULATING") return this.run(user, existing.id);
     const queued = existing
       ? await this.prisma.payrollRun.update({ where: { id: existing.id }, data: { status: "QUEUED", error: null } })
@@ -287,6 +288,23 @@ export class PayrollService {
       throw new BadRequestException("Kỳ lương chưa tính xong");
     }
     return detail;
+  }
+
+  private async assertAttendanceLocked(legalEntityId: string, year: number, month: number) {
+    const [employees, entries, payroll] = await Promise.all([
+      this.prisma.employee.findMany({ where: { legalEntityId, status: { not: "TERMINATED" } }, select: { code: true } }),
+      this.prisma.timeEntry.findMany({ where: { year, month, employee: { legalEntityId } }, include: { employee: true } }),
+      this.prisma.payrollRun.findFirst({ where: { legalEntityId, year, month } }),
+    ]);
+    const decision = attendanceLockDecision({
+      activeCodes: employees.map((item) => item.code),
+      entries: entries.map((item) => ({ code: item.employee.code, locked: item.locked })),
+      payrollLocked: payroll?.status === "LOCKED",
+    });
+    if (!decision.canCalculate) {
+      const detail = decision.missing.length ? ` Thiếu công: ${decision.missing.join(", ")}.` : "";
+      throw new BadRequestException(`Chưa khóa kỳ công. Khóa bảng công trước khi tính lương.${detail}`);
+    }
   }
 
   private requirePayrollReader(user: AuthUser) {

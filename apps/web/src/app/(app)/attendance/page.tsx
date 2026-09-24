@@ -1,4 +1,5 @@
 import { AttendanceImport } from "@/components/attendance-import";
+import { AttendanceLock } from "@/components/attendance-lock";
 import { api, requireMe } from "@/lib/api";
 
 type Row = {
@@ -13,19 +14,29 @@ type Row = {
   nightHours: number;
   locked: boolean;
 };
+type Period = {
+  periodLocked: boolean;
+  missing: string[];
+  open: string[];
+  payrollLocked: boolean;
+  canLock: boolean;
+  canUnlock: boolean;
+};
 
 export default async function AttendancePage() {
   const me = await requireMe();
   const rows = await api<Row[]>("/api/attendance?month=2026-09");
-  const canImport = me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL";
+  const period = await api<Period>("/api/attendance/period?month=2026-09");
+  const canImport = (me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL") && !period?.periodLocked;
   return (
     <>
       <div className="top">
         <div>
           <h1>Chấm công tháng 09/2026</h1>
-          <p className="sub">Máy chấm công đẩy log vào bảng này. Trước khi nối máy, nhập CSV. Kỳ đã khóa lương thì không nhập đè.</p>
+          <p className="sub">Nhập CSV khi kỳ còn mở. Khóa kỳ công xong mới được tính lương.</p>
         </div>
       </div>
+      {period ? <AttendanceLock period={period} canManage={me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL"} /> : null}
       <AttendanceImport canImport={canImport} />
       <article className="card">
         <table>

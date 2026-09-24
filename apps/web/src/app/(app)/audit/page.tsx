@@ -16,6 +16,8 @@ const actionLabel: Record<string, string> = {
   EXPORT_JOURNAL: "Xuất bút toán",
   VIEW_PAYSLIP: "Xem phiếu lương",
   IMPORT_ATTENDANCE: "Nhập công",
+  LOCK_ATTENDANCE: "Khóa kỳ công",
+  UNLOCK_ATTENDANCE: "Mở kỳ công",
   OFFBOARD: "Nghỉ việc",
 };
 

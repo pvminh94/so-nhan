@@ -7,12 +7,17 @@ export function PayrollActions({ canRun, runId, status }: { canRun: boolean; run
       <button
         className="btn"
         onClick={async () => {
-          await fetch("/backend/api/payroll/runs", {
+          const response = await fetch("/backend/api/payroll/runs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ year: 2026, month: 9 }),
           });
-          window.location.href = "/payroll";
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            alert(body.message ?? "Không tính được lương");
+            return;
+          }
+          window.location.href = `/payroll/${body.id ?? ""}`;
         }}
       >
         Tính lại 09/2026
@@ -21,7 +26,12 @@ export function PayrollActions({ canRun, runId, status }: { canRun: boolean; run
         <button
           className="btn-line"
           onClick={async () => {
-            await fetch(`/backend/api/payroll/runs/${runId}/lock`, { method: "POST" });
+            const response = await fetch(`/backend/api/payroll/runs/${runId}/lock`, { method: "POST" });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              alert(body.message ?? "Không khóa được kỳ lương");
+              return;
+            }
             window.location.reload();
           }}
         >
