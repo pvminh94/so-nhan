@@ -44,6 +44,6 @@ Tài khoản demo, mật khẩu `Sonhan@2026`:
 
 ## Triển khai 3 VPS
 
-`deploy/docker-compose.yml` gộp đủ dịch vụ để thử. Tách production bằng cách chạy từng service trên máy của nó và trỏ `DATABASE_URL`, `API_INTERNAL_URL`. Postgres và Redis chỉ nghe mạng nội bộ giữa các VPS, không mở ra internet.
+`deploy/docker-compose.yml` gộp đủ dịch vụ để thử trên một máy. Không tự seed lại, vì seed xóa dữ liệu. Lần đầu, vào container API chạy `npm run db:seed -w @so-nhan/api` nếu muốn dữ liệu demo. Tách production bằng cách chạy web, API và Postgres trên ba VPS, trỏ `DATABASE_URL` và `API_INTERNAL_URL`. Postgres và Redis chỉ nghe mạng nội bộ, không mở ra internet.
 
 Backup PostgreSQL mỗi đêm ra máy khác. Thử phục hồi trước khi go-live.

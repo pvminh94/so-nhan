@@ -18,7 +18,7 @@ services:
     working_dir: /repo
     volumes:
       - ../:/repo
-    command: sh -c "npm ci && npm run db:push -w @so-nhan/api && npm run db:seed -w @so-nhan/api && npm run dev:api"
+    command: sh -c "npm ci && npm run db:push -w @so-nhan/api && npm run dev:api"
     environment:
       DATABASE_URL: postgresql://hrms:${POSTGRES_PASSWORD:-change-me}@postgres:5432/hrms
       PORT: 4000
