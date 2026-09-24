@@ -44,6 +44,9 @@ export default async function PayrollDetail({ params }: { params: Promise<{ id: 
   const variance = canCompare && (run.status === "CALCULATED" || run.status === "LOCKED")
     ? await api<Variance>(`/api/payroll/runs/${id}/variance`)
     : null;
+  const bank = canRun && (run.status === "CALCULATED" || run.status === "LOCKED")
+    ? await api<{ total: number; expectedNet: number; rows: number; sha256: string; missingAccounts: string[] }>(`/api/payroll/runs/${id}/bank`)
+    : null;
   return (
     <>
       <p className="muted"><Link href="/payroll">Lương</Link> / {String(run.month).padStart(2, "0")}/{run.year}</p>
@@ -61,6 +64,19 @@ export default async function PayrollDetail({ params }: { params: Promise<{ id: 
         <article className="card"><div className="k">TNCN</div><div className="num" style={{ fontSize: 22 }}>{vnd(run.totals.pit)}</div></article>
         <article className="card"><div className="k">Thực nhận</div><div className="num" style={{ fontSize: 22 }}>{vnd(run.totals.net)}</div></article>
       </div>
+      {bank ? (
+        <article className="card" style={{ marginTop: 12 }}>
+          <h2>Đối soát file ngân hàng</h2>
+          <p>Tổng file {vnd(bank.total)} · tổng thực nhận {vnd(bank.expectedNet)} · {bank.rows} dòng.</p>
+          <p className={bank.total === bank.expectedNet && !bank.missingAccounts.length ? "ok" : "warn"}>
+            {bank.total === bank.expectedNet && !bank.missingAccounts.length
+              ? `Khớp. SHA-256 ${bank.sha256.slice(0, 12)}…`
+              : bank.missingAccounts.length
+                ? `Thiếu tài khoản: ${bank.missingAccounts.join(", ")}`
+                : "Tổng file lệch tổng thực nhận. Không chuyển khoản."}
+          </p>
+        </article>
+      ) : null}
       {variance ? (
         <article className="card" style={{ marginTop: 12 }}>
           <h2>Đối chiếu kỳ trước</h2>

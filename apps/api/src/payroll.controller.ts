@@ -46,6 +46,16 @@ export class PayrollController {
     return this.payroll.lock(req.user!, id);
   }
 
+  @Get("payroll/runs/:id/bank")
+  bankSummary(@Req() req: RequestWithUser, @Param("id") id: string) {
+    return this.payroll.bankFile(req.user!, id);
+  }
+
+  @Post("payroll/runs/:id/bank/check")
+  checkBank(@Req() req: RequestWithUser, @Param("id") id: string, @Body() body: { csv?: string }) {
+    return this.payroll.checkBankCsv(req.user!, id, body.csv ?? "");
+  }
+
   @Get("payroll/runs/:id/bank.csv")
   @Header("Content-Type", "text/csv; charset=utf-8")
   async bank(@Req() req: RequestWithUser, @Param("id") id: string, @Res({ passthrough: true }) res: Response) {

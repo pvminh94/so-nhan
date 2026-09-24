@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, assertLeaveAvailable, assertPackRange, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, leaveBalanceFromLedger, parseAttendanceCsv, resolveRulePack, VN_RULE_PACKS } from "./index";
+import { annualLeaveEntitlement, assertLeaveAvailable, assertPackRange, attendanceLockDecision, attendanceTemplate, buildBankFile, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, leaveBalanceFromLedger, parseAttendanceCsv, reconcileBankFile, resolveRulePack, VN_RULE_PACKS } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -290,5 +290,31 @@ describe("gói luật có ngày", () => {
       ...fullMonth,
     });
     expect(result.ruleVersion).toBe("vn-2026.07");
+  });
+});
+
+describe("file ngân hàng", () => {
+  it("tổng file phải bằng tổng thực nhận", () => {
+    const file = buildBankFile(
+      [
+        { code: "NV001", fullName: "A", bankName: "VCB", bankAccount: "001", amount: 10_000_000, content: "Luong" },
+        { code: "NV002", fullName: "B", bankName: "TCB", bankAccount: "002", amount: 8_000_000, content: "Luong" },
+      ],
+      "09/2026",
+    );
+    expect(file.total).toBe(18_000_000);
+    expect(file.missingAccounts).toEqual([]);
+    const check = reconcileBankFile(file.csv, 18_000_000);
+    expect(check.matched).toBe(true);
+    expect(check.rows).toBe(2);
+  });
+
+  it("lệch tổng hoặc thiếu tài khoản thì bắt", () => {
+    const file = buildBankFile(
+      [{ code: "NV001", fullName: "A", bankName: "", bankAccount: "", amount: 1_000_000, content: "" }],
+      "09/2026",
+    );
+    expect(file.missingAccounts).toEqual(["NV001"]);
+    expect(() => reconcileBankFile(file.csv, 2_000_000)).toThrow(/thực nhận/);
   });
 });

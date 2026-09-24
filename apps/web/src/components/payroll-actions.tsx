@@ -38,7 +38,7 @@ export function PayrollActions({ canRun, runId, status }: { canRun: boolean; run
           Khóa kỳ
         </button>
       ) : null}
-      {runId ? <a className="btn-line" href={`/backend/api/payroll/runs/${runId}/bank.csv`}>File ngân hàng</a> : null}
+      {runId ? <a className="btn-line" href={`/backend/api/payroll/runs/${runId}/bank.csv`}>File ngân hàng (đã đối soát)</a> : null}
       {runId ? <a className="btn-line" href={`/backend/api/payroll/runs/${runId}/journal.csv`}>Bút toán</a> : null}
     </div>
   );

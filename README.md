@@ -2,6 +2,8 @@
 
 HRMS thương mại cho quy mô khoảng **5.000 nhân sự**. Không phải microservice.
 
+Sổ tay chạy hệ thống: [docs/van-hanh.md](docs/van-hanh.md).
+
 ## Quyết định
 
 5.000 người tạo ra vài triệu dòng công mỗi năm và một job lương vài chục giây. PostgreSQL một máy xử lý được. Cái làm hỏng sản phẩm là sai luật và mất backup, không phải thiếu Kubernetes.

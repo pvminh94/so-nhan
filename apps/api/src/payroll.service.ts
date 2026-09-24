@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { attendanceLockDecision, assertPackRange, buildJournal, calculatePayslip, comparePayroll, parseRulePack, resolveRulePack, rulePackPayload, statutorySnapshot, VN_RULE_PACKS, type RulePack, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
+import { attendanceLockDecision, assertPackRange, buildBankFile, buildJournal, calculatePayslip, comparePayroll, parseRulePack, reconcileBankFile, resolveRulePack, rulePackPayload, statutorySnapshot, VN_RULE_PACKS, type RulePack, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
 import type { AuthUser } from "./common";
 import { SALARY_ROLES } from "./common";
 import { PrismaService } from "./prisma.service";
@@ -253,23 +253,34 @@ export class PayrollService {
     return this.run(user, id);
   }
 
+  async bankFile(user: AuthUser, id: string) {
+    this.requireRole(user, ["ADMIN", "PAYROLL"]);
+    const built = await this.buildBank(user, id);
+    if (built.missingAccounts.length) {
+      throw new BadRequestException(`Thiếu số tài khoản: ${built.missingAccounts.join(", ")}`);
+    }
+    if (built.total !== built.expectedNet) {
+      throw new BadRequestException(`Tổng file ${built.total} khác tổng thực nhận ${built.expectedNet}`);
+    }
+    return built;
+  }
+
   async bankCsv(user: AuthUser, id: string) {
+    const built = await this.bankFile(user, id);
+    await this.prisma.auditLog.create({
+      data: { userId: user.id, action: "EXPORT_BANK", entity: "PayrollRun", entityId: id, meta: { sha256: built.sha256, total: built.total } },
+    });
+    return built.csv;
+  }
+
+  async checkBankCsv(user: AuthUser, id: string, csvText: string) {
     this.requireRole(user, ["ADMIN", "PAYROLL"]);
     const detail = await this.readyRun(user, id);
-    const employees = await this.prisma.employee.findMany({ where: { id: { in: detail.payslips.map((item) => item.employeeId) } } });
-    const byId = new Map(employees.map((item) => [item.id, item]));
-    const lines = ["Ma NV,Ho ten,Ngan hang,So tai khoan,So tien,Noi dung"];
-    for (const slip of detail.payslips) {
-      const employee = byId.get(slip.employeeId);
-      lines.push(
-        [slip.code, csv(slip.fullName), csv(employee?.bankName ?? ""), csv(employee?.bankAccount ?? ""), slip.net, csv(`Luong ${detail.month}/${detail.year}`)].join(","),
-      );
+    try {
+      return reconcileBankFile(csvText, detail.totals.net);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : "File không khớp");
     }
-    lines.push(`TONG,,,,${detail.totals.net},`);
-    await this.prisma.auditLog.create({
-      data: { userId: user.id, action: "EXPORT_BANK", entity: "PayrollRun", entityId: id },
-    });
-    return lines.join("\n");
   }
 
   async journalCsv(user: AuthUser, id: string) {
@@ -347,6 +358,28 @@ export class PayrollService {
       const detail = decision.missing.length ? ` Thiếu công: ${decision.missing.join(", ")}.` : "";
       throw new BadRequestException(`Chưa khóa kỳ công. Khóa bảng công trước khi tính lương.${detail}`);
     }
+  }
+
+  private async buildBank(user: AuthUser, id: string) {
+    const detail = await this.readyRun(user, id);
+    const employees = await this.prisma.employee.findMany({ where: { id: { in: detail.payslips.map((item) => item.employeeId) } } });
+    const byId = new Map(employees.map((item) => [item.id, item]));
+    const periodLabel = `${String(detail.month).padStart(2, "0")}/${detail.year}`;
+    const file = buildBankFile(
+      detail.payslips.map((slip) => {
+        const employee = byId.get(slip.employeeId);
+        return {
+          code: slip.code,
+          fullName: slip.fullName,
+          bankName: employee?.bankName ?? "",
+          bankAccount: employee?.bankAccount ?? "",
+          amount: slip.net,
+          content: `Luong ${periodLabel}`,
+        };
+      }),
+      periodLabel,
+    );
+    return { ...file, expectedNet: detail.totals.net, periodLabel };
   }
 
   private async loadPacks(): Promise<RulePack[]> {
