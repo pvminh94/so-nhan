@@ -5,3 +5,4 @@ export * from "./attendance-period";
 export * from "./journal";
 export * from "./variance";
 export * from "./dependents";
+export * from "./leave-ledger";

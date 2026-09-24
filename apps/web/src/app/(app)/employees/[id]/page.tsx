@@ -24,6 +24,7 @@ type Detail = {
   bankAccount: string | null;
   citizenId: string | null;
   leaveBalances: Array<{ year: number; entitled: number; used: number }>;
+  leaveLedger: Array<{ id: string; year: number; kind: string; days: number; note: string; at: string }>;
   dependentPeople: Array<{ id: string; fullName: string; relation: string; birthDate: string; warning: string | null }>;
 };
 

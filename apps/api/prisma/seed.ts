@@ -10,6 +10,7 @@ async function main() {
   await prisma.payslip.deleteMany();
   await prisma.payrollRun.deleteMany();
   await prisma.leaveRequest.deleteMany();
+  await prisma.leaveLedger.deleteMany();
   await prisma.leaveBalance.deleteMany();
   await prisma.timeEntry.deleteMany();
   await prisma.session.deleteMany();
@@ -65,9 +66,19 @@ async function main() {
     });
     created.set(item.code, row.id);
     const years = yearsBetween(item.hireDate, new Date("2026-09-01"));
+    const entitled = annualLeaveEntitlement(years);
+    const used = item.code === "NV007" ? 1 : 0;
     await prisma.leaveBalance.create({
-      data: { employeeId: row.id, year: 2026, entitled: annualLeaveEntitlement(years), used: item.code === "NV007" ? 1 : 0 },
+      data: { employeeId: row.id, year: 2026, entitled, used },
     });
+    await prisma.leaveLedger.create({
+      data: { employeeId: row.id, year: 2026, kind: "ACCRUAL", days: entitled, note: "Mở quỹ năm" },
+    });
+    if (used) {
+      await prisma.leaveLedger.create({
+        data: { employeeId: row.id, year: 2026, kind: "USAGE", days: -used, note: "Đã dùng" },
+      });
+    }
   }
 
   await prisma.employee.update({ where: { id: created.get("NV004") }, data: { managerId: created.get("NV005") } });

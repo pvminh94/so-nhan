@@ -143,6 +143,7 @@ model Employee {
   reports         Employee[]     @relation("Reports")
   user            User?
   leaveBalances   LeaveBalance[]
+  leaveLedgers    LeaveLedger[]
   leaveRequests   LeaveRequest[] @relation("LeaveOwner")
   approvals       LeaveRequest[] @relation("LeaveApprover")
   timeEntries     TimeEntry[]
@@ -176,6 +177,28 @@ model LeaveBalance {
   used       Float    @default(0)
 
   @@unique([employeeId, year])
+}
+
+enum LeaveLedgerKind {
+  ACCRUAL
+  USAGE
+  ADJUSTMENT
+  PAYOUT
+  CARRY
+}
+
+model LeaveLedger {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   Employee        @relation(fields: [employeeId], references: [id])
+  year       Int
+  kind       LeaveLedgerKind
+  days       Float
+  note       String
+  requestId  String?
+  createdAt  DateTime        @default(now())
+
+  @@index([employeeId, year])
 }
 
 model LeaveRequest {

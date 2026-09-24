@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, parseAttendanceCsv } from "./index";
+import { annualLeaveEntitlement, assertLeaveAvailable, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, leaveBalanceFromLedger, parseAttendanceCsv } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -247,5 +247,23 @@ describe("đối chiếu hai kỳ", () => {
     const result = comparePayroll([{ code: "NV001", ...base, workedDays: 20 }], [{ code: "NV001", ...base }]);
     expect(result.unexplained).toBe(1);
     expect(result.rows[0]?.reasons.join(" ")).toContain("tính lại");
+  });
+});
+
+describe("sổ cái phép", () => {
+  it("cộng dồn cộng trừ, không sửa một ô số dư", () => {
+    const snap = leaveBalanceFromLedger([
+      { kind: "ACCRUAL", days: 12 },
+      { kind: "USAGE", days: -2 },
+      { kind: "ADJUSTMENT", days: 1 },
+    ]);
+    expect(snap.entitled).toBe(13);
+    expect(snap.used).toBe(2);
+    expect(snap.remaining).toBe(11);
+  });
+
+  it("không cho dùng quá phép tồn", () => {
+    expect(() => assertLeaveAvailable(1, 2)).toThrow(/phép tồn/);
+    expect(() => assertLeaveAvailable(2, 2)).not.toThrow();
   });
 });

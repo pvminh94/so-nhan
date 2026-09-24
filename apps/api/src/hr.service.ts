@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { LeaveStatus, LeaveType, type Role } from "@prisma/client";
-import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, dependentWarning, parseAttendanceCsv } from "@so-nhan/payroll-engine";
+import { LeaveStatus, LeaveType, Prisma, type Role } from "@prisma/client";
+import { annualLeaveEntitlement, assertLeaveAvailable, attendanceLockDecision, attendanceTemplate, dependentWarning, leaveBalanceFromLedger, parseAttendanceCsv } from "@so-nhan/payroll-engine";
 import type { DependentRelation } from "@prisma/client";
 import { canSeeSalary, SALARY_ROLES, type AuthUser } from "./common";
 import { PrismaService } from "./prisma.service";
@@ -122,12 +122,26 @@ export class HrService {
     });
     if (!row) throw new NotFoundException("Không thấy nhân sự");
     await this.assertInScope(user, id);
+    const year = new Date().getFullYear();
+    await this.ensureLeaveLedger(this.prisma, id, year);
+    const [balances, ledger] = await Promise.all([
+      this.prisma.leaveBalance.findMany({ where: { employeeId: id }, orderBy: { year: "desc" } }),
+      this.prisma.leaveLedger.findMany({ where: { employeeId: id }, orderBy: { createdAt: "asc" } }),
+    ]);
     return {
       ...this.presentEmployee(user, row),
       legalEntity: row.legalEntity.name,
       taxCodeCompany: row.legalEntity.taxCode,
       manager: row.manager ? { id: row.manager.id, fullName: row.manager.fullName } : null,
-      leaveBalances: row.leaveBalances,
+      leaveBalances: balances,
+      leaveLedger: ledger.map((item) => ({
+        id: item.id,
+        year: item.year,
+        kind: item.kind,
+        days: item.days,
+        note: item.note,
+        at: item.createdAt,
+      })),
       contractEnd: row.contractEnd,
       dependentPeople: this.canEditDependents(user, row.id)
         ? row.dependentPeople.map((item) => ({
@@ -201,8 +215,13 @@ export class HrService {
       include: { department: true },
     });
     const years = 0;
+    const year = new Date().getFullYear();
+    const entitled = annualLeaveEntitlement(years);
     await this.prisma.leaveBalance.create({
-      data: { employeeId: created.id, year: new Date().getFullYear(), entitled: annualLeaveEntitlement(years), used: 0 },
+      data: { employeeId: created.id, year, entitled, used: 0 },
+    });
+    await this.prisma.leaveLedger.create({
+      data: { employeeId: created.id, year, kind: "ACCRUAL", days: entitled, note: "Mở quỹ năm" },
     });
     await this.audit(user, "CREATE_EMPLOYEE", "Employee", created.id);
     return this.presentEmployee(user, created);
@@ -243,10 +262,20 @@ export class HrService {
     if (!user.employeeId) throw new ForbiddenException("Tài khoản này không gắn hồ sơ nhân sự");
     const days = Number(body.days);
     if (!body.startDate || !body.endDate || !body.reason || !(days > 0)) throw new BadRequestException("Thiếu ngày hoặc lý do");
+    const type = body.type ?? "ANNUAL";
+    if (type === "ANNUAL") {
+      const year = new Date(body.startDate).getFullYear();
+      const snap = await this.ensureLeaveLedger(this.prisma, user.employeeId, year);
+      try {
+        assertLeaveAvailable(snap.remaining, days);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : "Không đủ phép tồn");
+      }
+    }
     const created = await this.prisma.leaveRequest.create({
       data: {
         employeeId: user.employeeId,
-        type: body.type ?? "ANNUAL",
+        type,
         startDate: new Date(body.startDate),
         endDate: new Date(body.endDate),
         days,
@@ -281,9 +310,30 @@ export class HrService {
         data: { status: status as LeaveStatus, approverId: user.employeeId, decidedAt: new Date() },
       });
       if (status === "APPROVED" && request.type === "ANNUAL") {
-        await tx.leaveBalance.updateMany({
-          where: { employeeId: request.employeeId, year: request.startDate.getFullYear() },
-          data: { used: { increment: request.days } },
+        const year = request.startDate.getFullYear();
+        await this.ensureLeaveLedger(tx, request.employeeId, year);
+        const entries = await tx.leaveLedger.findMany({ where: { employeeId: request.employeeId, year } });
+        const snap = leaveBalanceFromLedger(entries);
+        try {
+          assertLeaveAvailable(snap.remaining, request.days);
+        } catch (error) {
+          throw new BadRequestException(error instanceof Error ? error.message : "Không đủ phép tồn");
+        }
+        await tx.leaveLedger.create({
+          data: {
+            employeeId: request.employeeId,
+            year,
+            kind: "USAGE",
+            days: -request.days,
+            note: "Duyệt đơn nghỉ phép",
+            requestId: id,
+          },
+        });
+        const next = leaveBalanceFromLedger([...entries, { kind: "USAGE", days: -request.days }]);
+        await tx.leaveBalance.upsert({
+          where: { employeeId_year: { employeeId: request.employeeId, year } },
+          update: { entitled: next.entitled, used: next.used },
+          create: { employeeId: request.employeeId, year, entitled: next.entitled, used: next.used },
         });
       }
       return saved;
@@ -504,12 +554,27 @@ export class HrService {
     if (!employee) throw new NotFoundException("Không thấy nhân sự");
     if (employee.status === "TERMINATED") throw new BadRequestException("Người này đã nghỉ việc");
     if (!body.lastDay || !body.reason) throw new BadRequestException("Cần ngày nghỉ và lý do");
+    const lastDay = new Date(body.lastDay);
+    const year = lastDay.getFullYear();
+    const snap = await this.ensureLeaveLedger(this.prisma, id, year);
     const updated = await this.prisma.employee.update({
       where: { id },
-      data: { status: "TERMINATED", contractEnd: new Date(body.lastDay) },
+      data: { status: "TERMINATED", contractEnd: lastDay },
     });
+    if (snap.remaining > 0) {
+      await this.prisma.leaveLedger.create({
+        data: {
+          employeeId: id,
+          year,
+          kind: "PAYOUT",
+          days: -snap.remaining,
+          note: `Quyết toán phép khi nghỉ: ${body.reason}`,
+        },
+      });
+      await this.syncLeaveBalance(this.prisma, id, year);
+    }
     await this.audit(user, "OFFBOARD", "Employee", id);
-    return { id: updated.id, status: updated.status };
+    return { id: updated.id, status: updated.status, leavePayout: snap.remaining };
   }
 
   async listAudit(user: AuthUser) {
@@ -573,6 +638,31 @@ export class HrService {
       bankAccount: salary ? maskAccount(row.bankAccount) : null,
       citizenId: salary ? maskId(row.citizenId) : null,
     };
+  }
+
+  private async ensureLeaveLedger(db: Prisma.TransactionClient | PrismaService, employeeId: string, year: number) {
+    const existing = await db.leaveLedger.findMany({ where: { employeeId, year }, orderBy: { createdAt: "asc" } });
+    if (existing.length) return leaveBalanceFromLedger(existing);
+    const balance = await db.leaveBalance.findUnique({ where: { employeeId_year: { employeeId, year } } });
+    if (!balance) return { entitled: 0, used: 0, remaining: 0 };
+    await db.leaveLedger.create({ data: { employeeId, year, kind: "ACCRUAL", days: balance.entitled, note: "Mở quỹ năm" } });
+    if (balance.used > 0) {
+      await db.leaveLedger.create({
+        data: { employeeId, year, kind: "USAGE", days: -balance.used, note: "Số đã dùng trước sổ cái" },
+      });
+    }
+    return this.syncLeaveBalance(db, employeeId, year);
+  }
+
+  private async syncLeaveBalance(db: Prisma.TransactionClient | PrismaService, employeeId: string, year: number) {
+    const entries = await db.leaveLedger.findMany({ where: { employeeId, year } });
+    const snap = leaveBalanceFromLedger(entries);
+    await db.leaveBalance.upsert({
+      where: { employeeId_year: { employeeId, year } },
+      update: { entitled: snap.entitled, used: snap.used },
+      create: { employeeId, year, entitled: snap.entitled, used: snap.used },
+    });
+    return snap;
   }
 
   private async scopeIds(user: AuthUser): Promise<string[] | null> {
