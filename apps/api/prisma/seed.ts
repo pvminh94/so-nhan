@@ -1,6 +1,6 @@
 import { PrismaClient, type WageRegion } from "@prisma/client";
 import { hash } from "bcryptjs";
-import { annualLeaveEntitlement, calculatePayslip } from "@so-nhan/payroll-engine";
+import { annualLeaveEntitlement, calculatePayslip, rulePackPayload, VN_RULE_PACKS } from "@so-nhan/payroll-engine";
 
 const prisma = new PrismaClient();
 const password = "Sonhan@2026";
@@ -15,6 +15,7 @@ async function main() {
   await prisma.timeEntry.deleteMany();
   await prisma.session.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.statutoryRule.deleteMany();
   await prisma.user.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.department.deleteMany();
@@ -178,6 +179,18 @@ async function main() {
         assessableIncome: result.assessableIncome,
         warnings: result.warnings,
         lines: { create: result.lines },
+      },
+    });
+  }
+
+  for (const rule of VN_RULE_PACKS) {
+    await prisma.statutoryRule.create({
+      data: {
+        version: rule.version,
+        validFrom: rule.validFrom,
+        validTo: rule.validTo,
+        note: rule.note,
+        payload: rulePackPayload(rule),
       },
     });
   }

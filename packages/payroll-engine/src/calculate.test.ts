@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, assertLeaveAvailable, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, leaveBalanceFromLedger, parseAttendanceCsv } from "./index";
+import { annualLeaveEntitlement, assertLeaveAvailable, assertPackRange, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, leaveBalanceFromLedger, parseAttendanceCsv, resolveRulePack, VN_RULE_PACKS } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -8,6 +8,8 @@ describe("trần và phép", () => {
   it("trần BHXH đổi vào tháng 7/2026", () => {
     expect(insuranceCeiling({ year: 2026, month: 6 })).toBe(46_800_000);
     expect(insuranceCeiling({ year: 2026, month: 7 })).toBe(50_600_000);
+    expect(resolveRulePack({ year: 2026, month: 6 }).version).toBe("vn-2026.01");
+    expect(resolveRulePack({ year: 2026, month: 9 }).version).toBe("vn-2026.07");
   });
 
   it("phép năm 12 ngày cộng thâm niên mỗi 5 năm", () => {
@@ -265,5 +267,28 @@ describe("sổ cái phép", () => {
   it("không cho dùng quá phép tồn", () => {
     expect(() => assertLeaveAvailable(1, 2)).toThrow(/phép tồn/);
     expect(() => assertLeaveAvailable(2, 2)).not.toThrow();
+  });
+});
+
+describe("gói luật có ngày", () => {
+  it("thêm gói mới không sửa gói cũ", () => {
+    const extra = { ...VN_RULE_PACKS[1]!, version: "vn-2027.01", validFrom: 202_701, validTo: 202_712, referenceWage: 3_000_000 };
+    assertPackRange(VN_RULE_PACKS, extra);
+    const packs = [...VN_RULE_PACKS, extra];
+    expect(insuranceCeiling({ year: 2026, month: 9 }, packs)).toBe(50_600_000);
+    expect(insuranceCeiling({ year: 2027, month: 1 }, packs)).toBe(60_000_000);
+    expect(() => assertPackRange(VN_RULE_PACKS, { version: "vn-2026.08", validFrom: 202_609, validTo: 202_612 })).toThrow(/Trùng/);
+  });
+
+  it("kỳ 9/2026 gắn vn-2026.07 trên phiếu", () => {
+    const result = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+    });
+    expect(result.ruleVersion).toBe("vn-2026.07");
   });
 });

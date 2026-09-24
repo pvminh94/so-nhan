@@ -283,6 +283,18 @@ model PayslipLine {
   sort         Int
 }
 
+model StatutoryRule {
+  id        String   @id @default(cuid())
+  version   String   @unique
+  validFrom Int
+  validTo   Int
+  note      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([validFrom, validTo])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?

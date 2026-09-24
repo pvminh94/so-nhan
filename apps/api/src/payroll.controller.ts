@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Inject, Param, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Get, Header, Inject, Param, Post, Query, Req, Res } from "@nestjs/common";
 import type { Response } from "express";
 import type { RequestWithUser } from "./auth.guard";
 import { PayrollService } from "./payroll.service";
@@ -8,8 +8,17 @@ export class PayrollController {
   constructor(@Inject(PayrollService) private readonly payroll: PayrollService) {}
 
   @Get("statutory")
-  statutory() {
-    return this.payroll.statutory({ year: 2026, month: 9 });
+  statutory(@Query("year") year?: string, @Query("month") month?: string) {
+    const period = year && month ? { year: Number(year), month: Number(month) } : { year: 2026, month: 9 };
+    return this.payroll.statutory(period);
+  }
+
+  @Post("statutory")
+  addRule(
+    @Req() req: RequestWithUser,
+    @Body() body: { version?: string; validFrom?: number; validTo?: number; note?: string; referenceWage?: number },
+  ) {
+    return this.payroll.addRule(req.user!, body);
   }
 
   @Get("payroll/runs")

@@ -1,18 +1,11 @@
 import {
-  DEPENDENT_DEDUCTION_VND,
-  EMPLOYEE_SI_RATE,
-  EMPLOYER_SI_RATE,
-  OT_MULTIPLIER,
-  PERSONAL_DEDUCTION_VND,
-  REGIONAL_MINIMUM_VND,
-  RULE_VERSION,
-  UNPAID_DAYS_SI_CUTOFF,
-  type Period,
-  type WageRegion,
-  insuranceCeiling,
   overtimeCaps,
   pitOnAssessable,
+  resolveRulePack,
   roundVnd,
+  type Period,
+  type RulePack,
+  type WageRegion,
 } from "./statutory";
 
 export type PitTreatment = "taxable" | "exempt" | "deduction" | "info";
@@ -42,6 +35,8 @@ export type PayrollInput = {
   allowances?: Array<{ code: string; name: string; amount: number; taxable: boolean }>;
   yearlyOtHours?: number;
   yearlyOtCap?: 200 | 300;
+  rules?: RulePack;
+  packs?: RulePack[];
 };
 
 export type PayrollResult = {
@@ -58,15 +53,15 @@ export type PayrollResult = {
   warnings: string[];
 };
 
-function resolveInsuranceBase(input: PayrollInput): { base: number; formula: string } {
-  if (input.unpaidDays >= UNPAID_DAYS_SI_CUTOFF) {
+function resolveInsuranceBase(input: PayrollInput, pack: RulePack): { base: number; formula: string } {
+  if (input.unpaidDays >= pack.unpaidDaysCutoff) {
     return {
       base: 0,
-      formula: `Nghỉ không lương ${input.unpaidDays} ngày ≥ ${UNPAID_DAYS_SI_CUTOFF} → không đóng BHXH tháng này`,
+      formula: `Nghỉ không lương ${input.unpaidDays} ngày ≥ ${pack.unpaidDaysCutoff} → không đóng BHXH tháng này`,
     };
   }
-  const floor = REGIONAL_MINIMUM_VND[input.region];
-  const ceiling = insuranceCeiling(input.period);
+  const floor = pack.regionalMinimum[input.region];
+  const ceiling = pack.referenceWage * pack.insuranceMultiple;
   const raw = input.insuranceSalary > 0 ? input.insuranceSalary : input.baseSalary;
   if (raw < floor) {
     return { base: floor, formula: `Lương hợp đồng ${raw.toLocaleString("vi-VN")} < sàn vùng ${input.region} ${floor.toLocaleString("vi-VN")} → lấy sàn` };
@@ -81,6 +76,7 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
   if (input.standardDays <= 0) {
     throw new Error("standardDays phải lớn hơn 0");
   }
+  const pack = input.rules ?? resolveRulePack(input.period, input.packs);
   const warnings: string[] = [];
   const lines: PayslipLine[] = [];
   const hourly = input.baseSalary / input.standardDays / 8;
@@ -111,10 +107,10 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
     });
   }
 
-  const otWeekday = roundVnd((input.otWeekdayHours ?? 0) * hourly * OT_MULTIPLIER.weekday);
-  const otWeekend = roundVnd((input.otWeekendHours ?? 0) * hourly * OT_MULTIPLIER.weekend);
-  const otHoliday = roundVnd((input.otHolidayHours ?? 0) * hourly * OT_MULTIPLIER.holiday);
-  const night = roundVnd((input.nightHours ?? 0) * hourly * OT_MULTIPLIER.nightPremium);
+  const otWeekday = roundVnd((input.otWeekdayHours ?? 0) * hourly * pack.otMultiplier.weekday);
+  const otWeekend = roundVnd((input.otWeekendHours ?? 0) * hourly * pack.otMultiplier.weekend);
+  const otHoliday = roundVnd((input.otHolidayHours ?? 0) * hourly * pack.otMultiplier.holiday);
+  const night = roundVnd((input.nightHours ?? 0) * hourly * pack.otMultiplier.nightPremium);
 
   if (otWeekday) {
     lines.push({
@@ -157,15 +153,15 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
     });
   }
 
-  const insurance = resolveInsuranceBase(input);
-  const insuranceEmployee = roundVnd(insurance.base * EMPLOYEE_SI_RATE);
-  const insuranceEmployer = roundVnd(insurance.base * EMPLOYER_SI_RATE);
+  const insurance = resolveInsuranceBase(input, pack);
+  const insuranceEmployee = roundVnd(insurance.base * pack.employeeRate);
+  const insuranceEmployer = roundVnd(insurance.base * pack.employerRate);
 
   lines.push({
     code: "SI_EE",
     name: "BHXH, BHYT, BHTN người lao động",
     amount: insuranceEmployee,
-    formula: `${insurance.formula}. 10,5% × ${insurance.base.toLocaleString("vi-VN")}`,
+    formula: `${insurance.formula}. ${(pack.employeeRate * 100).toLocaleString("vi-VN")}% × ${insurance.base.toLocaleString("vi-VN")}`,
     pitTreatment: "deduction",
     sort: 80,
   });
@@ -173,21 +169,21 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
     code: "SI_ER",
     name: "BHXH, BHYT, BHTN doanh nghiệp",
     amount: insuranceEmployer,
-    formula: `21,5% × ${insurance.base.toLocaleString("vi-VN")}. Chi phí công ty, không trừ vào lương`,
+    formula: `${(pack.employerRate * 100).toLocaleString("vi-VN")}% × ${insurance.base.toLocaleString("vi-VN")}. Chi phí công ty, không trừ vào lương`,
     pitTreatment: "info",
     sort: 81,
   });
 
   const taxableEarnings = prorated + allowanceTaxable;
-  const deduction = PERSONAL_DEDUCTION_VND + input.dependents * DEPENDENT_DEDUCTION_VND;
+  const deduction = pack.personalDeduction + input.dependents * pack.dependentDeduction;
   const assessable = Math.max(0, taxableEarnings - insuranceEmployee - deduction);
-  const pit = pitOnAssessable(assessable);
+  const pit = pitOnAssessable(assessable, pack.pitBrackets);
 
   lines.push({
     code: "PIT",
     name: "Thuế thu nhập cá nhân",
     amount: pit,
-    formula: `Thu nhập chịu thuế ${taxableEarnings.toLocaleString("vi-VN")} − bảo hiểm ${insuranceEmployee.toLocaleString("vi-VN")} − giảm trừ ${deduction.toLocaleString("vi-VN")} = ${assessable.toLocaleString("vi-VN")}. Biểu 5 bậc ${RULE_VERSION}`,
+    formula: `Thu nhập chịu thuế ${taxableEarnings.toLocaleString("vi-VN")} − bảo hiểm ${insuranceEmployee.toLocaleString("vi-VN")} − giảm trừ ${deduction.toLocaleString("vi-VN")} = ${assessable.toLocaleString("vi-VN")}. Biểu 5 bậc ${pack.version}`,
     pitTreatment: "deduction",
     sort: 90,
   });
@@ -204,7 +200,7 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
   }
 
   return {
-    ruleVersion: RULE_VERSION,
+    ruleVersion: pack.version,
     lines: lines.sort((a, b) => a.sort - b.sort),
     gross,
     insuranceBase: insurance.base,

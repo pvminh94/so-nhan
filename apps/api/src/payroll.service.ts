@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { attendanceLockDecision, buildJournal, calculatePayslip, comparePayroll, statutorySnapshot, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
+import { attendanceLockDecision, assertPackRange, buildJournal, calculatePayslip, comparePayroll, parseRulePack, resolveRulePack, rulePackPayload, statutorySnapshot, VN_RULE_PACKS, type RulePack, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
 import type { AuthUser } from "./common";
 import { SALARY_ROLES } from "./common";
 import { PrismaService } from "./prisma.service";
@@ -8,8 +8,42 @@ import { PrismaService } from "./prisma.service";
 export class PayrollService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  statutory(period = currentPeriod()) {
-    return statutorySnapshot(period);
+  async statutory(period = currentPeriod()) {
+    const packs = await this.loadPacks();
+    return statutorySnapshot(period, packs);
+  }
+
+  async addRule(user: AuthUser, body: Partial<RulePack>) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL"]);
+    if (!body.version || !body.validFrom || !body.validTo) throw new BadRequestException("Thiếu phiên bản hoặc ngày hiệu lực");
+    const packs = await this.loadPacks();
+    try {
+      assertPackRange(packs, { version: body.version, validFrom: body.validFrom, validTo: body.validTo });
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : "Gói luật không hợp lệ");
+    }
+    const base = packs[packs.length - 1] ?? VN_RULE_PACKS[VN_RULE_PACKS.length - 1]!;
+    const rule: RulePack = {
+      ...base,
+      ...body,
+      version: body.version,
+      validFrom: body.validFrom,
+      validTo: body.validTo,
+      note: body.note ?? `Gói ${body.version}`,
+    };
+    await this.prisma.statutoryRule.create({
+      data: {
+        version: rule.version,
+        validFrom: rule.validFrom,
+        validTo: rule.validTo,
+        note: rule.note,
+        payload: rulePackPayload(rule),
+      },
+    });
+    await this.prisma.auditLog.create({
+      data: { userId: user.id, action: "ADD_STATUTORY_RULE", entity: "StatutoryRule", entityId: rule.version },
+    });
+    return this.statutory({ year: Math.floor(rule.validFrom / 100), month: rule.validFrom % 100 });
   }
 
   async runs() {
@@ -103,7 +137,13 @@ export class PayrollService {
     const queued = existing
       ? await this.prisma.payrollRun.update({ where: { id: existing.id }, data: { status: "QUEUED", error: null } })
       : await this.prisma.payrollRun.create({
-          data: { legalEntityId: entity.id, year, month, status: "QUEUED", ruleVersion: "vn-2026.07" },
+          data: {
+            legalEntityId: entity.id,
+            year,
+            month,
+            status: "QUEUED",
+            ruleVersion: resolveRulePack({ year, month }, await this.loadPacks()).version,
+          },
         });
     await this.prisma.auditLog.create({
       data: { userId: user.id, action: "QUEUE_PAYROLL", entity: "PayrollRun", entityId: queued.id, meta: { year, month } },
@@ -138,12 +178,14 @@ export class PayrollService {
     });
     const times = await this.prisma.timeEntry.findMany({ where: { year: run.year, month: run.month } });
     const timeByEmployee = new Map(times.map((item) => [item.employeeId, item]));
+    const packs = await this.loadPacks();
     const slips = employees.map((employee) => {
       const time = timeByEmployee.get(employee.id);
       return {
         employee,
         result: calculatePayslip({
           period: { year: run.year, month: run.month },
+          packs,
           region: employee.region as WageRegion,
           baseSalary: employee.baseSalary,
           insuranceSalary: employee.insuranceSalary,
@@ -189,7 +231,7 @@ export class PayrollService {
       }
       await tx.payrollRun.update({
         where: { id: runId },
-        data: { status: "CALCULATED", error: null, ruleVersion: slips[0]?.result.ruleVersion ?? "vn-2026.07" },
+        data: { status: "CALCULATED", error: null, ruleVersion: slips[0]?.result.ruleVersion ?? resolveRulePack({ year: run.year, month: run.month }, packs).version },
       });
       await tx.auditLog.create({
         data: { action: "CALCULATE_PAYROLL", entity: "PayrollRun", entityId: runId, meta: { count: slips.length } },
@@ -304,6 +346,29 @@ export class PayrollService {
     if (!decision.canCalculate) {
       const detail = decision.missing.length ? ` Thiếu công: ${decision.missing.join(", ")}.` : "";
       throw new BadRequestException(`Chưa khóa kỳ công. Khóa bảng công trước khi tính lương.${detail}`);
+    }
+  }
+
+  private async loadPacks(): Promise<RulePack[]> {
+    await this.ensureRules();
+    const rows = await this.prisma.statutoryRule.findMany({ orderBy: { validFrom: "asc" } });
+    if (!rows.length) return VN_RULE_PACKS;
+    return rows.map((row) => parseRulePack({ version: row.version, validFrom: row.validFrom, validTo: row.validTo, note: row.note, payload: row.payload }));
+  }
+
+  private async ensureRules() {
+    for (const rule of VN_RULE_PACKS) {
+      await this.prisma.statutoryRule.upsert({
+        where: { version: rule.version },
+        create: {
+          version: rule.version,
+          validFrom: rule.validFrom,
+          validTo: rule.validTo,
+          note: rule.note,
+          payload: rulePackPayload(rule),
+        },
+        update: {},
+      });
     }
   }
 
