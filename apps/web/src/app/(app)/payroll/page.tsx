@@ -4,6 +4,14 @@ import { api, requireMe } from "@/lib/api";
 
 type Run = { id: string; year: number; month: number; status: string; company: string; payslips: number; ruleVersion: string };
 
+const statusLabel: Record<string, string> = {
+  QUEUED: "Chờ worker",
+  CALCULATING: "Đang tính",
+  CALCULATED: "Đã tính",
+  LOCKED: "Đã khóa",
+  FAILED: "Lỗi",
+};
+
 export default async function PayrollPage() {
   const me = await requireMe();
   const runs = await api<Run[]>("/api/payroll/runs");
@@ -13,7 +21,7 @@ export default async function PayrollPage() {
       <div className="top">
         <div>
           <h1>Lương</h1>
-          <p className="sub">Engine thuần tính BHXH và TNCN. Kỳ đã khóa không tính đè.</p>
+          <p className="sub">Bấm tính là đưa vào hàng đợi. Worker riêng tính, API không bị nghẽn.</p>
         </div>
         <PayrollActions canRun={canRun} />
       </div>
@@ -27,7 +35,7 @@ export default async function PayrollPage() {
                 <td>{run.company}</td>
                 <td>{run.payslips}</td>
                 <td>{run.ruleVersion}</td>
-                <td><span className={run.status === "LOCKED" ? "tag ok" : "tag wait"}>{run.status === "LOCKED" ? "Đã khóa" : "Đã tính"}</span></td>
+                <td><span className={run.status === "LOCKED" ? "tag ok" : run.status === "FAILED" ? "tag no" : "tag wait"}>{statusLabel[run.status] ?? run.status}</span></td>
               </tr>
             ))}
           </tbody>

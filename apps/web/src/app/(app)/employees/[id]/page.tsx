@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OffboardForm } from "@/components/offboard";
 import { api, dateVN, requireMe, vnd } from "@/lib/api";
 
 type Detail = {
@@ -25,7 +26,7 @@ type Detail = {
 };
 
 export default async function EmployeeDetail({ params }: { params: Promise<{ id: string }> }) {
-  await requireMe();
+  const me = await requireMe();
   const { id } = await params;
   const row = await api<Detail>(`/api/employees/${id}`);
   if (!row) return null;
@@ -60,6 +61,7 @@ export default async function EmployeeDetail({ params }: { params: Promise<{ id:
           <p>Lương đóng BHXH: <b className="money">{vnd(row.insuranceSalary)}</b></p>
           <p>Người phụ thuộc: {row.dependents ?? "ẩn"}</p>
           {balance ? <p>Phép {balance.year}: {balance.entitled - balance.used} ngày còn lại / {balance.entitled} ngày</p> : null}
+          {(me.role === "ADMIN" || me.role === "HR") && row.status !== "TERMINATED" ? <OffboardForm id={row.id} /> : null}
         </article>
       </div>
     </>

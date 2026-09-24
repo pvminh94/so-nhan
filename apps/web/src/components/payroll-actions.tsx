@@ -1,6 +1,6 @@
 "use client";
 
-export function PayrollActions({ canRun, runId, locked }: { canRun: boolean; runId?: string; locked?: boolean }) {
+export function PayrollActions({ canRun, runId, status }: { canRun: boolean; runId?: string; status?: string }) {
   if (!canRun) return null;
   return (
     <div className="row">
@@ -17,7 +17,7 @@ export function PayrollActions({ canRun, runId, locked }: { canRun: boolean; run
       >
         Tính lại 09/2026
       </button>
-      {runId && !locked ? (
+      {runId && status === "CALCULATED" ? (
         <button
           className="btn-line"
           onClick={async () => {
@@ -29,6 +29,7 @@ export function PayrollActions({ canRun, runId, locked }: { canRun: boolean; run
         </button>
       ) : null}
       {runId ? <a className="btn-line" href={`/backend/api/payroll/runs/${runId}/bank.csv`}>File ngân hàng</a> : null}
+      {runId ? <a className="btn-line" href={`/backend/api/payroll/runs/${runId}/journal.csv`}>Bút toán</a> : null}
     </div>
   );
 }

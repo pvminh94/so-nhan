@@ -1,3 +1,4 @@
+import { AttendanceImport } from "@/components/attendance-import";
 import { api, requireMe } from "@/lib/api";
 
 type Row = {
@@ -14,16 +15,18 @@ type Row = {
 };
 
 export default async function AttendancePage() {
-  await requireMe();
+  const me = await requireMe();
   const rows = await api<Row[]>("/api/attendance?month=2026-09");
+  const canImport = me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL";
   return (
     <>
       <div className="top">
         <div>
           <h1>Chấm công tháng 09/2026</h1>
-          <p className="sub">Kỳ này là dữ liệu đã chốt để tính lương. Máy chấm công LAN sẽ đẩy log vào bảng này, không nối thẳng vào database.</p>
+          <p className="sub">Máy chấm công đẩy log vào bảng này. Trước khi nối máy, nhập CSV. Kỳ đã khóa lương thì không nhập đè.</p>
         </div>
       </div>
+      <AttendanceImport canImport={canImport} />
       <article className="card">
         <table>
           <thead>

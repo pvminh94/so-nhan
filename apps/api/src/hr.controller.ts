@@ -54,4 +54,29 @@ export class HrController {
   attendance(@Query("month") month = "2026-09") {
     return this.hr.attendance(month);
   }
+
+  @Get("attendance/template")
+  template() {
+    return { csv: this.hr.template() };
+  }
+
+  @Post("attendance/import")
+  importAttendance(@Req() req: RequestWithUser, @Body() body: { month?: string; csv?: string }) {
+    return this.hr.importAttendance(req.user!, body.month ?? "2026-09", body.csv ?? "");
+  }
+
+  @Get("contracts")
+  contracts() {
+    return this.hr.contracts();
+  }
+
+  @Post("employees/:id/offboard")
+  offboard(@Req() req: RequestWithUser, @Param("id") id: string, @Body() body: { lastDay?: string; reason?: string }) {
+    return this.hr.offboard(req.user!, id, body);
+  }
+
+  @Get("audit")
+  audit(@Req() req: RequestWithUser) {
+    return this.hr.listAudit(req.user!);
+  }
 }

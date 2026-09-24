@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { LeaveStatus, LeaveType, type Role } from "@prisma/client";
-import { annualLeaveEntitlement } from "@so-nhan/payroll-engine";
+import { annualLeaveEntitlement, attendanceTemplate, parseAttendanceCsv } from "@so-nhan/payroll-engine";
 import { canSeeSalary, type AuthUser } from "./common";
 import { PrismaService } from "./prisma.service";
 
@@ -16,11 +16,26 @@ export class HrService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async dashboard(user: AuthUser) {
-    const [headcount, pending, runs, departments] = await Promise.all([
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 60);
+    const [headcount, pending, runs, departments, expiring, mine] = await Promise.all([
       this.prisma.employee.count({ where: { status: { not: "TERMINATED" } } }),
       this.prisma.leaveRequest.count({ where: { status: "PENDING" } }),
       this.prisma.payrollRun.findMany({ orderBy: [{ year: "desc" }, { month: "desc" }], take: 3, include: { legalEntity: true } }),
       this.prisma.department.findMany({ include: { _count: { select: { employees: true } } }, orderBy: { name: "asc" } }),
+      this.prisma.employee.findMany({
+        where: { status: { not: "TERMINATED" }, contractEnd: { lte: soon } },
+        orderBy: { contractEnd: "asc" },
+        take: 8,
+        include: { department: true },
+      }),
+      user.employeeId
+        ? this.prisma.payslip.findFirst({
+            where: { employeeId: user.employeeId },
+            orderBy: { run: { year: "desc" } },
+            include: { run: true },
+          })
+        : Promise.resolve(null),
     ]);
     return {
       headcount,
@@ -32,6 +47,13 @@ export class HrService {
         company: run.legalEntity.name,
       })),
       departments: departments.map((item) => ({ id: item.id, name: item.name, count: item._count.employees })),
+      expiring: expiring.map((item) => ({
+        id: item.id,
+        fullName: item.fullName,
+        department: item.department.name,
+        contractEnd: item.contractEnd,
+      })),
+      myPayslip: mine ? { runId: mine.runId, label: `${String(mine.run.month).padStart(2, "0")}/${mine.run.year}`, net: canSeeSalary(user.role, user.employeeId, mine.employeeId) ? mine.net : null } : null,
       role: user.role,
     };
   }
@@ -203,6 +225,109 @@ export class HrService {
       otHolidayHours: row.otHolidayHours,
       nightHours: row.nightHours,
       locked: row.locked,
+    }));
+  }
+
+  async importAttendance(user: AuthUser, month: string, csvText: string) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL"]);
+    const [yearText, monthText] = month.split("-");
+    const year = Number(yearText);
+    const monthNumber = Number(monthText);
+    if (!year || !monthNumber) throw new BadRequestException("Tháng không hợp lệ");
+    const locked = await this.prisma.timeEntry.count({ where: { year, month: monthNumber, locked: true } });
+    if (locked) throw new BadRequestException("Kỳ công đã khóa theo kỳ lương, không nhập lại");
+    let rows;
+    try {
+      rows = parseAttendanceCsv(csvText);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : "File không đọc được");
+    }
+    const employees = await this.prisma.employee.findMany({ where: { code: { in: rows.map((row) => row.code) } } });
+    const byCode = new Map(employees.map((item) => [item.code, item]));
+    const missing = rows.filter((row) => !byCode.has(row.code)).map((row) => row.code);
+    if (missing.length) throw new BadRequestException(`Không thấy mã: ${missing.join(", ")}`);
+    for (const row of rows) {
+      const employee = byCode.get(row.code)!;
+      await this.prisma.timeEntry.upsert({
+        where: { employeeId_year_month: { employeeId: employee.id, year, month: monthNumber } },
+        update: {
+          standardDays: row.standardDays,
+          workedDays: row.workedDays,
+          unpaidDays: row.unpaidDays,
+          otWeekdayHours: row.otWeekdayHours,
+          otWeekendHours: row.otWeekendHours,
+          otHolidayHours: row.otHolidayHours,
+          nightHours: row.nightHours,
+        },
+        create: {
+          employeeId: employee.id,
+          year,
+          month: monthNumber,
+          standardDays: row.standardDays,
+          workedDays: row.workedDays,
+          unpaidDays: row.unpaidDays,
+          otWeekdayHours: row.otWeekdayHours,
+          otWeekendHours: row.otWeekendHours,
+          otHolidayHours: row.otHolidayHours,
+          nightHours: row.nightHours,
+        },
+      });
+    }
+    await this.audit(user, "IMPORT_ATTENDANCE", "TimeEntry", month);
+    return { imported: rows.length };
+  }
+
+  template() {
+    return attendanceTemplate();
+  }
+
+  async contracts() {
+    const rows = await this.prisma.employee.findMany({
+      where: { status: { not: "TERMINATED" } },
+      include: { department: true },
+      orderBy: { contractEnd: "asc" },
+    });
+    const now = Date.now();
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      fullName: row.fullName,
+      department: row.department.name,
+      contractType: row.contractType,
+      contractStart: row.contractStart,
+      contractEnd: row.contractEnd,
+      daysLeft: row.contractEnd ? Math.ceil((row.contractEnd.getTime() - now) / 86_400_000) : null,
+    }));
+  }
+
+  async offboard(user: AuthUser, id: string, body: { lastDay?: string; reason?: string }) {
+    this.requireRole(user, ["ADMIN", "HR"]);
+    const employee = await this.prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new NotFoundException("Không thấy nhân sự");
+    if (employee.status === "TERMINATED") throw new BadRequestException("Người này đã nghỉ việc");
+    if (!body.lastDay || !body.reason) throw new BadRequestException("Cần ngày nghỉ và lý do");
+    const updated = await this.prisma.employee.update({
+      where: { id },
+      data: { status: "TERMINATED", contractEnd: new Date(body.lastDay) },
+    });
+    await this.audit(user, "OFFBOARD", "Employee", id);
+    return { id: updated.id, status: updated.status };
+  }
+
+  async listAudit(user: AuthUser) {
+    this.requireRole(user, ["ADMIN", "AUDITOR", "HR"]);
+    const rows = await this.prisma.auditLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 80,
+      include: { user: true },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      at: row.createdAt,
+      action: row.action,
+      entity: row.entity,
+      entityId: row.entityId,
+      actor: row.user?.fullName ?? "Hệ thống",
     }));
   }
 

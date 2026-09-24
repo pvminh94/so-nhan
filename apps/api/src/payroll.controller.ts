@@ -38,4 +38,11 @@ export class PayrollController {
     res.setHeader("Content-Disposition", `attachment; filename="luong-${id}.csv"`);
     return this.payroll.bankCsv(req.user!, id);
   }
+
+  @Get("payroll/runs/:id/journal.csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  async journal(@Req() req: RequestWithUser, @Param("id") id: string, @Res({ passthrough: true }) res: Response) {
+    res.setHeader("Content-Disposition", `attachment; filename="but-toan-${id}.csv"`);
+    return this.payroll.journalCsv(req.user!, id);
+  }
 }

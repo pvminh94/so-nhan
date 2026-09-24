@@ -27,6 +27,7 @@ npm run db:push
 npm run db:seed
 npm test
 npm run dev:api
+npm run worker -w @so-nhan/api
 npm run dev:web
 ```
 

@@ -7,8 +7,10 @@ const links = [
   ["/employees", "Nhân sự"],
   ["/leave", "Nghỉ phép"],
   ["/attendance", "Chấm công"],
+  ["/contracts", "Hợp đồng"],
   ["/payroll", "Lương"],
   ["/statutory", "Tham số luật"],
+  ["/audit", "Nhật ký"],
 ];
 
 export function Shell({ me, path, children }: { me: Me; path: string; children: React.ReactNode }) {

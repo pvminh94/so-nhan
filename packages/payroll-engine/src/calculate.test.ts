@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, calculatePayslip, insuranceCeiling } from "./index";
+import { annualLeaveEntitlement, attendanceTemplate, buildJournal, calculatePayslip, insuranceCeiling, parseAttendanceCsv } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -135,6 +135,19 @@ describe("phiếu lương Việt Nam", () => {
     expect(withOt.gross).toBeGreaterThan(base.gross);
     expect(withOt.net - base.net).toBe(withOt.gross - base.gross);
     expect(withOt.lines.find((line) => line.code === "OT_WEEKDAY")?.pitTreatment).toBe("exempt");
+  });
+
+  it("đọc file công và ra bút toán cân", () => {
+    const rows = parseAttendanceCsv(attendanceTemplate() + "NV009,22,22,0,8,0,0,2\n");
+    expect(rows).toHaveLength(2);
+    expect(rows[1].otWeekdayHours).toBe(8);
+    const journal = buildJournal("09/2026", [
+      { gross: 20_000_000, net: 17_780_000, pit: 120_000, insuranceEmployee: 2_100_000, insuranceEmployer: 4_300_000 },
+    ]);
+    const debit = journal.reduce((sum, line) => sum + line.debit, 0);
+    const credit = journal.reduce((sum, line) => sum + line.credit, 0);
+    expect(debit).toBe(credit);
+    expect(debit).toBe(24_300_000);
   });
 
   it("vượt trần giờ tăng ca thì có cảnh báo, vẫn ra số", () => {

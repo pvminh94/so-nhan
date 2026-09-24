@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PayrollActions } from "@/components/payroll-actions";
+import { QueueRefresh } from "@/components/queue-refresh";
 import { api, requireMe, vnd } from "@/lib/api";
 
 type Line = { id: string; code: string; name: string; amount: number; formula: string; pitTreatment: string };
@@ -19,6 +20,7 @@ type Run = {
   year: number;
   month: number;
   status: string;
+  error?: string | null;
   company: string;
   ruleVersion: string;
   totals: { gross: number; net: number; pit: number; insuranceEmployee: number; insuranceEmployer: number };
@@ -37,9 +39,10 @@ export default async function PayrollDetail({ params }: { params: Promise<{ id: 
       <div className="top">
         <div>
           <h1>{run.company}</h1>
-          <p className="sub">Luật {run.ruleVersion}. {run.status === "LOCKED" ? "Kỳ đã khóa." : "Kỳ chưa khóa."}</p>
+          <p className="sub">Luật {run.ruleVersion}. Trạng thái {run.status}.{run.error ? ` ${run.error}` : ""}</p>
+          <QueueRefresh status={run.status} />
         </div>
-        <PayrollActions canRun={canRun} runId={run.id} locked={run.status === "LOCKED"} />
+        <PayrollActions canRun={canRun} runId={run.id} status={run.status} />
       </div>
       <div className="grid">
         <article className="card"><div className="k">Tổng gross</div><div className="num" style={{ fontSize: 22 }}>{vnd(run.totals.gross)}</div></article>

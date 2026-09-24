@@ -49,8 +49,11 @@ enum LeaveStatus {
 }
 
 enum PayrollStatus {
+  QUEUED
+  CALCULATING
   CALCULATED
   LOCKED
+  FAILED
 }
 
 model User {
@@ -185,6 +188,7 @@ model PayrollRun {
   month         Int
   status        PayrollStatus @default(CALCULATED)
   ruleVersion   String
+  error         String?
   createdAt     DateTime      @default(now())
   lockedAt      DateTime?
   payslips      Payslip[]
