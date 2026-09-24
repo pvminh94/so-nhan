@@ -85,6 +85,15 @@ export class HrController {
     return this.hr.contracts();
   }
 
+  @Post("employees/:id/dependents")
+  saveDependents(
+    @Req() req: RequestWithUser,
+    @Param("id") id: string,
+    @Body() body: { people?: Array<{ fullName?: string; relation?: "CHILD" | "SPOUSE" | "PARENT" | "OTHER"; birthDate?: string }> },
+  ) {
+    return this.hr.saveDependents(req.user!, id, body.people ?? []);
+  }
+
   @Post("employees/:id/offboard")
   offboard(@Req() req: RequestWithUser, @Param("id") id: string, @Body() body: { lastDay?: string; reason?: string }) {
     return this.hr.offboard(req.user!, id, body);

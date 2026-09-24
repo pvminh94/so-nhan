@@ -19,6 +19,7 @@ const actionLabel: Record<string, string> = {
   LOCK_ATTENDANCE: "Khóa kỳ công",
   UNLOCK_ATTENDANCE: "Mở kỳ công",
   OFFBOARD: "Nghỉ việc",
+  UPDATE_DEPENDENTS: "Cập nhật người phụ thuộc",
 };
 
 export default async function AuditPage() {

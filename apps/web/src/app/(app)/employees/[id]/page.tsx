@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DependentsForm } from "@/components/dependents-form";
 import { OffboardForm } from "@/components/offboard";
 import { api, dateVN, requireMe, vnd } from "@/lib/api";
 
@@ -23,6 +24,7 @@ type Detail = {
   bankAccount: string | null;
   citizenId: string | null;
   leaveBalances: Array<{ year: number; entitled: number; used: number }>;
+  dependentPeople: Array<{ id: string; fullName: string; relation: string; birthDate: string; warning: string | null }>;
 };
 
 export default async function EmployeeDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -60,6 +62,9 @@ export default async function EmployeeDetail({ params }: { params: Promise<{ id:
           <p>Lương hợp đồng: <b className="money">{vnd(row.baseSalary)}</b></p>
           <p>Lương đóng BHXH: <b className="money">{vnd(row.insuranceSalary)}</b></p>
           <p>Người phụ thuộc: {row.dependents ?? "ẩn"}</p>
+          {row.dependents != null && (me.employeeId === row.id || me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL") ? (
+            <DependentsForm employeeId={row.id} count={row.dependents} people={row.dependentPeople ?? []} />
+          ) : null}
           {balance ? <p>Phép {balance.year}: {balance.entitled - balance.used} ngày còn lại / {balance.entitled} ngày</p> : null}
           {(me.role === "ADMIN" || me.role === "HR") && row.status !== "TERMINATED" ? <OffboardForm id={row.id} /> : null}
         </article>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, insuranceCeiling, parseAttendanceCsv } from "./index";
+import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, buildJournal, calculatePayslip, comparePayroll, dependentWarning, insuranceCeiling, parseAttendanceCsv } from "./index";
 
 const sep = { year: 2026, month: 9 };
 const fullMonth = { standardDays: 22, workedDays: 22, unpaidDays: 0 };
@@ -162,6 +162,22 @@ describe("phiếu lương Việt Nam", () => {
     });
     expect(result.warnings[0]).toContain("50");
     expect(result.net).toBeGreaterThan(0);
+  });
+});
+
+describe("người phụ thuộc", () => {
+  const asOf = new Date("2026-09-01");
+
+  it("con dưới 18 tuổi không cảnh báo", () => {
+    expect(dependentWarning("CHILD", new Date("2012-01-01"), asOf)).toBeNull();
+  });
+
+  it("con đủ 18 tuổi cần hồ sơ", () => {
+    expect(dependentWarning("CHILD", new Date("2008-09-01"), asOf)).toContain("18");
+  });
+
+  it("cha mẹ dưới 60 tuổi cần hồ sơ", () => {
+    expect(dependentWarning("PARENT", new Date("1980-01-01"), asOf)).toContain("60");
   });
 });
 

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { LeaveStatus, LeaveType, type Role } from "@prisma/client";
-import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, parseAttendanceCsv } from "@so-nhan/payroll-engine";
+import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, dependentWarning, parseAttendanceCsv } from "@so-nhan/payroll-engine";
+import type { DependentRelation } from "@prisma/client";
 import { canSeeSalary, type AuthUser } from "./common";
 import { PrismaService } from "./prisma.service";
 
@@ -83,7 +84,7 @@ export class HrService {
   async employee(user: AuthUser, id: string) {
     const row = await this.prisma.employee.findUnique({
       where: { id },
-      include: { department: true, legalEntity: true, manager: true, leaveBalances: true },
+      include: { department: true, legalEntity: true, manager: true, leaveBalances: true, dependentPeople: { orderBy: { birthDate: "asc" } } },
     });
     if (!row) throw new NotFoundException("Không thấy nhân sự");
     if (user.role === "EMPLOYEE" && user.employeeId !== id) throw new ForbiddenException("Không có quyền xem hồ sơ này");
@@ -94,7 +95,46 @@ export class HrService {
       manager: row.manager ? { id: row.manager.id, fullName: row.manager.fullName } : null,
       leaveBalances: row.leaveBalances,
       contractEnd: row.contractEnd,
+      dependentPeople: this.canEditDependents(user, row.id)
+        ? row.dependentPeople.map((item) => ({
+            id: item.id,
+            fullName: item.fullName,
+            relation: item.relation,
+            birthDate: item.birthDate,
+            warning: dependentWarning(item.relation, item.birthDate, new Date()),
+          }))
+        : [],
     };
+  }
+
+  async saveDependents(
+    user: AuthUser,
+    id: string,
+    people: Array<{ fullName?: string; relation?: DependentRelation; birthDate?: string }>,
+  ) {
+    if (!this.canEditDependents(user, id)) throw new ForbiddenException("Không được sửa người phụ thuộc của người khác");
+    const employee = await this.prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new NotFoundException("Không thấy nhân sự");
+    if (employee.status === "TERMINATED") throw new BadRequestException("Người đã nghỉ việc");
+    if (!Array.isArray(people) || people.length > 10) throw new BadRequestException("Tối đa 10 người phụ thuộc");
+    const relations = new Set(["CHILD", "SPOUSE", "PARENT", "OTHER"]);
+    const rows = people.map((item) => {
+      const fullName = item.fullName?.trim() ?? "";
+      const birthDate = item.birthDate ? new Date(item.birthDate) : null;
+      if (fullName.length < 2) throw new BadRequestException("Thiếu họ tên người phụ thuộc");
+      if (!item.relation || !relations.has(item.relation)) throw new BadRequestException("Quan hệ không hợp lệ");
+      if (!birthDate || Number.isNaN(birthDate.getTime()) || birthDate > new Date()) {
+        throw new BadRequestException("Ngày sinh không hợp lệ");
+      }
+      return { employeeId: id, fullName, relation: item.relation, birthDate };
+    });
+    await this.prisma.$transaction([
+      this.prisma.dependent.deleteMany({ where: { employeeId: id } }),
+      ...rows.map((row) => this.prisma.dependent.create({ data: row })),
+      this.prisma.employee.update({ where: { id }, data: { dependents: rows.length } }),
+    ]);
+    await this.audit(user, "UPDATE_DEPENDENTS", "Employee", id);
+    return this.employee(user, id);
   }
 
   async createEmployee(user: AuthUser, body: Record<string, unknown>) {
@@ -416,6 +456,11 @@ export class HrService {
       bankAccount: salary ? maskAccount(row.bankAccount) : null,
       citizenId: salary ? maskId(row.citizenId) : null,
     };
+  }
+
+  private canEditDependents(user: AuthUser, employeeId: string) {
+    if (user.role === "ADMIN" || user.role === "HR" || user.role === "PAYROLL") return true;
+    return user.employeeId === employeeId;
   }
 
   private requireRole(user: AuthUser, roles: Role[]) {

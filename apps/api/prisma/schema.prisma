@@ -133,6 +133,24 @@ model Employee {
   approvals       LeaveRequest[] @relation("LeaveApprover")
   timeEntries     TimeEntry[]
   payslips        Payslip[]
+  dependentPeople Dependent[]
+}
+
+model Dependent {
+  id         String             @id @default(cuid())
+  employeeId String
+  employee   Employee           @relation(fields: [employeeId], references: [id])
+  fullName   String
+  relation   DependentRelation
+  birthDate  DateTime
+  createdAt  DateTime           @default(now())
+}
+
+enum DependentRelation {
+  CHILD
+  SPOUSE
+  PARENT
+  OTHER
 }
 
 model LeaveBalance {
