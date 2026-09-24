@@ -215,6 +215,17 @@ export class HrService {
       },
     });
     await this.audit(user, "REQUEST_LEAVE", "LeaveRequest", created.id);
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: user.employeeId },
+      include: { manager: { include: { user: true } } },
+    });
+    const hr = await this.prisma.user.findMany({ where: { role: { in: ["HR", "ADMIN"] } }, select: { id: true } });
+    await this.notify(
+      [...hr.map((item) => item.id), employee?.manager?.user?.id].filter((id): id is string => Boolean(id && id !== user.id)),
+      "Đơn nghỉ phép mới",
+      `${user.fullName} xin ${days} ngày: ${body.reason.trim()}`,
+      "/leave",
+    );
     return created;
   }
 
@@ -239,7 +250,33 @@ export class HrService {
       return saved;
     });
     await this.audit(user, `LEAVE_${status}`, "LeaveRequest", id);
+    const owner = await this.prisma.user.findUnique({ where: { employeeId: request.employeeId } });
+    if (owner && owner.id !== user.id) {
+      await this.notify(
+        [owner.id],
+        status === "APPROVED" ? "Đơn nghỉ phép đã duyệt" : "Đơn nghỉ phép bị từ chối",
+        `${request.days} ngày từ ${request.startDate.toISOString().slice(0, 10)}`,
+        "/leave",
+      );
+    }
     return updated;
+  }
+
+  async notifications(user: AuthUser) {
+    const rows = await this.prisma.notification.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+    return {
+      unread: rows.filter((row) => !row.readAt).length,
+      items: rows.map((row) => ({ id: row.id, title: row.title, body: row.body, href: row.href, at: row.createdAt, read: Boolean(row.readAt) })),
+    };
+  }
+
+  async readNotifications(user: AuthUser) {
+    await this.prisma.notification.updateMany({ where: { userId: user.id, readAt: null }, data: { readAt: new Date() } });
+    return this.notifications(user);
   }
 
   async attendance(month: string) {
@@ -465,6 +502,12 @@ export class HrService {
 
   private requireRole(user: AuthUser, roles: Role[]) {
     if (!roles.includes(user.role)) throw new ForbiddenException("Không đủ quyền");
+  }
+
+  private notify(userIds: string[], title: string, body: string, href: string) {
+    const unique = [...new Set(userIds)];
+    if (!unique.length) return Promise.resolve();
+    return this.prisma.notification.createMany({ data: unique.map((userId) => ({ userId, title, body, href })) });
   }
 
   private audit(user: AuthUser, action: string, entity: string, entityId: string) {

@@ -99,6 +99,16 @@ export class HrController {
     return this.hr.offboard(req.user!, id, body);
   }
 
+  @Get("notifications")
+  notifications(@Req() req: RequestWithUser) {
+    return this.hr.notifications(req.user!);
+  }
+
+  @Post("notifications/read")
+  readNotifications(@Req() req: RequestWithUser) {
+    return this.hr.readNotifications(req.user!);
+  }
+
   @Get("audit")
   audit(@Req() req: RequestWithUser) {
     return this.hr.listAudit(req.user!);

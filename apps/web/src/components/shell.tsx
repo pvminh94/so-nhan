@@ -11,9 +11,10 @@ const links = [
   ["/payroll", "Lương"],
   ["/statutory", "Tham số luật"],
   ["/audit", "Nhật ký"],
+  ["/notifications", "Thông báo"],
 ];
 
-export function Shell({ me, path, children }: { me: Me; path: string; children: React.ReactNode }) {
+export function Shell({ me, path, unread = 0, children }: { me: Me; path: string; unread?: number; children: React.ReactNode }) {
   return (
     <div className="shell">
       <aside className="side">
@@ -27,7 +28,7 @@ export function Shell({ me, path, children }: { me: Me; path: string; children: 
         <nav className="nav">
           {links.map(([href, label]) => (
             <Link key={href} href={href} className={path === href ? "active" : ""}>
-              {label}
+              {label}{href === "/notifications" && unread ? ` (${unread})` : ""}
             </Link>
           ))}
         </nav>
