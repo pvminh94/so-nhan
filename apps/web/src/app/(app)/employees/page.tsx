@@ -24,7 +24,13 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       <div className="top">
         <div>
           <h1>Nhân sự</h1>
-          <p className="sub">Lương chỉ hiện với nhân sự, lương, quản trị, hoặc chính người đó.</p>
+          <p className="sub">
+            {me.role === "MANAGER"
+              ? "Chỉ cấp dưới. Lương không hiện trừ phiếu của chính bạn."
+              : me.role === "EMPLOYEE"
+                ? "Chỉ hồ sơ của bạn."
+                : "Lương chỉ hiện với nhân sự, lương, quản trị, hoặc chính người đó."}
+          </p>
         </div>
         <form className="row">
           <input name="q" defaultValue={q} placeholder="Tên, mã, chức danh" style={{ width: 220 }} />

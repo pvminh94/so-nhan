@@ -50,9 +50,14 @@ export class HrController {
     return this.hr.decideLeave(req.user!, id, body.status === "REJECTED" ? "REJECTED" : "APPROVED");
   }
 
+  @Get("team")
+  team(@Req() req: RequestWithUser) {
+    return this.hr.team(req.user!);
+  }
+
   @Get("attendance")
-  attendance(@Query("month") month = "2026-09") {
-    return this.hr.attendance(month);
+  attendance(@Req() req: RequestWithUser, @Query("month") month = "2026-09") {
+    return this.hr.attendance(req.user!, month);
   }
 
   @Get("attendance/template")
@@ -81,8 +86,8 @@ export class HrController {
   }
 
   @Get("contracts")
-  contracts() {
-    return this.hr.contracts();
+  contracts(@Req() req: RequestWithUser) {
+    return this.hr.contracts(req.user!);
   }
 
   @Post("contracts/remind")

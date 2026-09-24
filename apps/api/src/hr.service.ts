@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { LeaveStatus, LeaveType, type Role } from "@prisma/client";
 import { annualLeaveEntitlement, attendanceLockDecision, attendanceTemplate, dependentWarning, parseAttendanceCsv } from "@so-nhan/payroll-engine";
 import type { DependentRelation } from "@prisma/client";
-import { canSeeSalary, type AuthUser } from "./common";
+import { canSeeSalary, SALARY_ROLES, type AuthUser } from "./common";
 import { PrismaService } from "./prisma.service";
 
 const leaveLabel: Record<LeaveType, string> = {
@@ -19,13 +19,23 @@ export class HrService {
   async dashboard(user: AuthUser) {
     const soon = new Date();
     soon.setDate(soon.getDate() + 60);
+    const scope = await this.scopeIds(user);
+    const inScope = scope ? { id: { in: scope } } : {};
+    const salaryView = SALARY_ROLES.includes(user.role);
     const [headcount, pending, runs, departments, expiring, mine] = await Promise.all([
-      this.prisma.employee.count({ where: { status: { not: "TERMINATED" } } }),
-      this.prisma.leaveRequest.count({ where: { status: "PENDING" } }),
-      this.prisma.payrollRun.findMany({ orderBy: [{ year: "desc" }, { month: "desc" }], take: 3, include: { legalEntity: true } }),
-      this.prisma.department.findMany({ include: { _count: { select: { employees: true } } }, orderBy: { name: "asc" } }),
+      this.prisma.employee.count({ where: { status: { not: "TERMINATED" }, ...inScope } }),
+      this.prisma.leaveRequest.count({
+        where: { status: "PENDING", ...(scope ? { employeeId: { in: scope } } : {}) },
+      }),
+      salaryView
+        ? this.prisma.payrollRun.findMany({ orderBy: [{ year: "desc" }, { month: "desc" }], take: 3, include: { legalEntity: true } })
+        : Promise.resolve([]),
+      this.prisma.department.findMany({
+        include: { _count: { select: { employees: { where: { status: { not: "TERMINATED" }, ...inScope } } } } },
+        orderBy: { name: "asc" },
+      }),
       this.prisma.employee.findMany({
-        where: { status: { not: "TERMINATED" }, contractEnd: { lte: soon } },
+        where: { status: { not: "TERMINATED" }, contractEnd: { lte: soon }, ...inScope },
         orderBy: { contractEnd: "asc" },
         take: 8,
         include: { department: true },
@@ -47,7 +57,9 @@ export class HrService {
         status: run.status,
         company: run.legalEntity.name,
       })),
-      departments: departments.map((item) => ({ id: item.id, name: item.name, count: item._count.employees })),
+      departments: departments
+        .filter((item) => !scope || item._count.employees > 0)
+        .map((item) => ({ id: item.id, name: item.name, count: item._count.employees })),
       expiring: expiring.map((item) => ({
         id: item.id,
         fullName: item.fullName,
@@ -65,20 +77,42 @@ export class HrService {
   }
 
   async employees(user: AuthUser, q?: string) {
+    const scope = await this.scopeIds(user);
     const rows = await this.prisma.employee.findMany({
-      where: q
-        ? {
-            OR: [
-              { fullName: { contains: q, mode: "insensitive" } },
-              { code: { contains: q, mode: "insensitive" } },
-              { jobTitle: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : undefined,
+      where: {
+        ...(scope ? { id: { in: scope } } : {}),
+        ...(q
+          ? {
+              OR: [
+                { fullName: { contains: q, mode: "insensitive" } },
+                { code: { contains: q, mode: "insensitive" } },
+                { jobTitle: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
       include: { department: true },
       orderBy: { code: "asc" },
     });
     return rows.map((row) => this.presentEmployee(user, row));
+  }
+
+  async team(user: AuthUser) {
+    if (!user.employeeId) return [];
+    const rows = await this.prisma.employee.findMany({
+      where: { managerId: user.employeeId },
+      include: { department: true, leaveRequests: { where: { status: "PENDING" } } },
+      orderBy: { code: "asc" },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      fullName: row.fullName,
+      jobTitle: row.jobTitle,
+      department: row.department.name,
+      status: row.status,
+      pendingLeave: row.leaveRequests.length,
+    }));
   }
 
   async employee(user: AuthUser, id: string) {
@@ -87,7 +121,7 @@ export class HrService {
       include: { department: true, legalEntity: true, manager: true, leaveBalances: true, dependentPeople: { orderBy: { birthDate: "asc" } } },
     });
     if (!row) throw new NotFoundException("Không thấy nhân sự");
-    if (user.role === "EMPLOYEE" && user.employeeId !== id) throw new ForbiddenException("Không có quyền xem hồ sơ này");
+    await this.assertInScope(user, id);
     return {
       ...this.presentEmployee(user, row),
       legalEntity: row.legalEntity.name,
@@ -179,7 +213,12 @@ export class HrService {
       user.role === "EMPLOYEE"
         ? { employeeId: user.employeeId ?? "__none__" }
         : user.role === "MANAGER"
-          ? { employee: { managerId: user.employeeId ?? "__none__" } }
+          ? {
+              OR: [
+                { employeeId: user.employeeId ?? "__none__" },
+                { employee: { managerId: user.employeeId ?? "__none__" } },
+              ],
+            }
           : {};
     const rows = await this.prisma.leaveRequest.findMany({
       where,
@@ -279,12 +318,13 @@ export class HrService {
     return this.notifications(user);
   }
 
-  async attendance(month: string) {
+  async attendance(user: AuthUser, month: string) {
     const [yearText, monthText] = month.split("-");
     const year = Number(yearText);
     const monthNumber = Number(monthText);
+    const scope = await this.scopeIds(user);
     const rows = await this.prisma.timeEntry.findMany({
-      where: { year, month: monthNumber },
+      where: { year, month: monthNumber, ...(scope ? { employeeId: { in: scope } } : {}) },
       include: { employee: { include: { department: true } } },
       orderBy: { employee: { code: "asc" } },
     });
@@ -438,9 +478,10 @@ export class HrService {
     return { due: employees.length, sent };
   }
 
-  async contracts() {
+  async contracts(user: AuthUser) {
+    const scope = await this.scopeIds(user);
     const rows = await this.prisma.employee.findMany({
-      where: { status: { not: "TERMINATED" } },
+      where: { status: { not: "TERMINATED" }, ...(scope ? { id: { in: scope } } : {}) },
       include: { department: true },
       orderBy: { contractEnd: "asc" },
     });
@@ -532,6 +573,36 @@ export class HrService {
       bankAccount: salary ? maskAccount(row.bankAccount) : null,
       citizenId: salary ? maskId(row.citizenId) : null,
     };
+  }
+
+  private async scopeIds(user: AuthUser): Promise<string[] | null> {
+    if (user.role === "ADMIN" || user.role === "HR" || user.role === "PAYROLL" || user.role === "AUDITOR") return null;
+    if (!user.employeeId) return [];
+    if (user.role === "EMPLOYEE") return [user.employeeId];
+    const reports = await this.descendantIds(user.employeeId);
+    return [user.employeeId, ...reports];
+  }
+
+  private async descendantIds(managerId: string): Promise<string[]> {
+    const found: string[] = [];
+    let frontier = [managerId];
+    const seen = new Set<string>([managerId]);
+    while (frontier.length) {
+      const rows = await this.prisma.employee.findMany({ where: { managerId: { in: frontier } }, select: { id: true } });
+      frontier = [];
+      for (const row of rows) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        found.push(row.id);
+        frontier.push(row.id);
+      }
+    }
+    return found;
+  }
+
+  private async assertInScope(user: AuthUser, employeeId: string) {
+    const scope = await this.scopeIds(user);
+    if (scope && !scope.includes(employeeId)) throw new ForbiddenException("Không có quyền xem hồ sơ này");
   }
 
   private canEditDependents(user: AuthUser, employeeId: string) {

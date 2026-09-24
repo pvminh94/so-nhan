@@ -17,7 +17,7 @@ export async function api<T>(path: string): Promise<T | null> {
     headers: { cookie: jar.toString() },
     cache: "no-store",
   });
-  if (response.status === 401) return null;
+  if (response.status === 401 || response.status === 403) return null;
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
 }
