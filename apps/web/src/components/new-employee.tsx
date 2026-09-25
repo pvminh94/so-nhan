@@ -3,8 +3,7 @@
 export function NewEmployeeForm({ departments }: { departments: Array<{ id: string; name: string }> }) {
   return (
     <form
-      className="form"
-      style={{ marginTop: 16 }}
+      style={{ display: "grid", gap: 12 }}
       onSubmit={async (event) => {
         event.preventDefault();
         const data = new FormData(event.currentTarget);

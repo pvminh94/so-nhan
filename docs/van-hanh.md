@@ -27,6 +27,8 @@ Mật khẩu `Sonhan@2026`. Đổi trước khi có dữ liệu thật.
 
 Không commit `.env`. Không dán PAT vào remote URL.
 
+Sau khi `git pull` giao diện: `sudo bash deploy/cai-dat-vps.sh --fix` (có build lại web). Mở `http://IP:3001`, không mở trơn IP.
+
 ## Lịch tháng
 
 1. Nhập công CSV khi kỳ còn mở. Thiếu mã thì không nhập.

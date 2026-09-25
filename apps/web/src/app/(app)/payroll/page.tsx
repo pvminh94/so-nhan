@@ -20,8 +20,9 @@ export default async function PayrollPage() {
     <>
       <div className="top">
         <div>
-          <h1>Lương</h1>
-          <p className="sub">Bấm tính là đưa vào hàng đợi. Worker riêng tính, API không bị nghẽn.</p>
+          <p className="hello">Bảng lương · khóa được mới là kỳ thật</p>
+          <h1>Kỳ lương</h1>
+          <p className="sub">Bấm tính là đưa vào hàng đợi. Worker riêng tính, API không bị nghẽn. Hai kỳ song song, sai lệch phải có lý do.</p>
         </div>
         <PayrollActions canRun={canRun} />
       </div>

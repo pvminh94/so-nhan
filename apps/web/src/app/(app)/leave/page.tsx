@@ -23,8 +23,9 @@ export default async function LeavePage() {
     <>
       <div className="top">
         <div>
+          <p className="hello">ESS / MSS</p>
           <h1>Nghỉ phép</h1>
-          <p className="sub">Nhân viên thấy đơn của mình. Quản lý thấy cấp dưới. Nhân sự thấy toàn bộ.</p>
+          <p className="sub">Nhân viên gửi đơn của mình. Quản lý duyệt cấp dưới. Nhân sự thấy toàn bộ. Quỹ phép là sổ cái, không sửa một ô số dư.</p>
         </div>
       </div>
       <article className="card" style={{ marginBottom: 12 }}>

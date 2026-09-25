@@ -2,9 +2,18 @@
 
 import { useState } from "react";
 
+const demos = [
+  ["admin@sonhan.vn", "Quản trị"],
+  ["hr@sonhan.vn", "Nhân sự"],
+  ["payroll@sonhan.vn", "Lương"],
+  ["quanly@sonhan.vn", "Quản lý"],
+  ["nhanvien@sonhan.vn", "Nhân viên"],
+];
+
 export default function LoginPage() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("admin@sonhan.vn");
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,27 +38,43 @@ export default function LoginPage() {
     <div className="login-wrap">
       <section className="hero">
         <div>
-          <div className="k" style={{ color: "#e7c99a" }}>Sổ Nhân</div>
-          <h1>Sổ cái con người, không phải file lương.</h1>
+          <div className="k">Sổ Nhân · HRMS Việt Nam</div>
+          <h1>Quản trị con người như sổ cái, không như file Excel.</h1>
+          <p>Hồ sơ, chấm công, nghỉ phép, BHXH và thuế TNCN đi cùng một kỳ lương — khóa được, giải trình được, đối chiếu ngân hàng được.</p>
+          <ul className="hero-list">
+            <li><i>✓</i> Kỳ lương song song, sai lệch phải có lý do</li>
+            <li><i>✓</i> Pack luật 2026: BHXH 21,5/10,5 · PIT 5 bậc</li>
+            <li><i>✓</i> ESS / MSS theo vai trò, nhật ký kiểm toán</li>
+            <li><i>✓</i> File ngân hàng có checksum, không gửi nhầm người</li>
+          </ul>
         </div>
-        <p>Một kỳ lương khóa được. Phiếu lương giải thích từng dòng. Phép, công và thuế đi cùng nhau.</p>
+        <p style={{ fontSize: 13, opacity: 0.7 }}>Một codebase · ba tiến trình · dành cho doanh nghiệp khoảng 5.000 người.</p>
       </section>
       <section className="panel">
         <form className="form" onSubmit={onSubmit}>
-          <h2>Đăng nhập</h2>
+          <div>
+            <div className="k" style={{ color: "var(--accent-2)" }}>Đăng nhập hệ thống</div>
+            <h2>Chào mừng trở lại</h2>
+            <p className="muted" style={{ margin: "6px 0 0" }}>Dùng tài khoản nội bộ. Mật khẩu demo Sonhan@2026.</p>
+          </div>
           <label>
-            Email
-            <input name="email" type="email" autoComplete="username" defaultValue="payroll@sonhan.vn" required />
+            Email công ty
+            <input name="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </label>
           <label>
             Mật khẩu
             <input name="password" type="password" autoComplete="current-password" defaultValue="Sonhan@2026" required />
           </label>
           {error ? <p className="warn">{error}</p> : null}
-          <button className="btn" disabled={pending}>{pending ? "Đang vào..." : "Vào hệ thống"}</button>
-          <p className="muted" style={{ fontSize: 13 }}>
-            Demo: hr@sonhan.vn, payroll@sonhan.vn, quanly@sonhan.vn, nhanvien@sonhan.vn. Mật khẩu chung Sonhan@2026.
-          </p>
+          <button className="btn" disabled={pending}>{pending ? "Đang vào…" : "Vào làm việc"}</button>
+          <div>
+            <p className="muted" style={{ fontSize: 12, margin: "0 0 6px" }}>Thử nhanh vai trò</p>
+            <div className="demo-chips">
+              {demos.map(([addr, label]) => (
+                <button key={addr} type="button" onClick={() => setEmail(addr)}>{label}</button>
+              ))}
+            </div>
+          </div>
         </form>
       </section>
     </div>

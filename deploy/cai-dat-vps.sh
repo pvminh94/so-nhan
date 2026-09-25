@@ -237,10 +237,11 @@ if [[ ${FIX} -eq 0 ]]; then
   else
     echo "  Bỏ seed. Demo: sudo bash deploy/cai-dat-vps.sh --seed"
   fi
-  echo ">> Build web"
-  cd "${REPO_DIR}/apps/web"
-  sudo -u "${APP_USER}" -H npx next build
 fi
+
+echo ">> Build web"
+cd "${REPO_DIR}/apps/web"
+sudo -u "${APP_USER}" -H npx next build
 
 TSX="${REPO_DIR}/node_modules/tsx/dist/cli.mjs"
 [[ -f "${TSX}" ]] || TSX="${REPO_DIR}/apps/api/node_modules/tsx/dist/cli.mjs"
