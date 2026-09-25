@@ -119,7 +119,15 @@ export class HrService {
   async employee(user: AuthUser, id: string) {
     const row = await this.prisma.employee.findUnique({
       where: { id },
-      include: { department: true, legalEntity: true, manager: true, leaveBalances: true, dependentPeople: { orderBy: { birthDate: "asc" } } },
+      include: {
+        department: true,
+        legalEntity: true,
+        manager: true,
+        leaveBalances: true,
+        dependentPeople: { orderBy: { birthDate: "asc" } },
+        allowances: { orderBy: { createdAt: "asc" } },
+        orgMoves: { orderBy: { effectiveDate: "desc" } },
+      },
     });
     if (!row) throw new NotFoundException("Không thấy nhân sự");
     await this.assertInScope(user, id);
@@ -153,6 +161,18 @@ export class HrService {
             warning: dependentWarning(item.relation, item.birthDate, new Date()),
           }))
         : [],
+      allowances: canSeeSalary(user.role, user.employeeId, row.id)
+        ? row.allowances.map((item) => ({ id: item.id, code: item.code, name: item.name, amount: item.amount, taxable: item.taxable }))
+        : [],
+      orgMoves: row.orgMoves.map((item) => ({
+        id: item.id,
+        fromDepartment: item.fromDepartment,
+        toDepartment: item.toDepartment,
+        fromTitle: item.fromTitle,
+        toTitle: item.toTitle,
+        reason: item.reason,
+        effectiveDate: item.effectiveDate,
+      })),
     };
   }
 
@@ -595,6 +615,118 @@ export class HrService {
       entityId: row.entityId,
       actor: row.user?.fullName ?? "Hệ thống",
     }));
+  }
+
+  async reports(user: AuthUser) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL", "MANAGER", "AUDITOR"]);
+    const scope = await this.scopeIds(user);
+    const where = { status: { not: "TERMINATED" as const }, ...(scope ? { id: { in: scope } } : {}) };
+    const people = await this.prisma.employee.findMany({
+      where,
+      include: { department: true },
+    });
+    const pendingLeave = await this.prisma.leaveRequest.count({
+      where: { status: "PENDING", ...(scope ? { employeeId: { in: scope } } : {}) },
+    });
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 60);
+    const expiring = people.filter((item) => item.contractEnd && item.contractEnd <= soon).length;
+    const byDepartment = new Map<string, number>();
+    const byStatus = new Map<string, number>();
+    const byContract = new Map<string, number>();
+    let fund = 0;
+    for (const row of people) {
+      byDepartment.set(row.department.name, (byDepartment.get(row.department.name) ?? 0) + 1);
+      byStatus.set(row.status, (byStatus.get(row.status) ?? 0) + 1);
+      byContract.set(row.contractType, (byContract.get(row.contractType) ?? 0) + 1);
+      if (SALARY_ROLES.includes(user.role)) fund += row.baseSalary;
+    }
+    const lastRun = SALARY_ROLES.includes(user.role)
+      ? await this.prisma.payrollRun.findFirst({
+          where: { status: { in: ["CALCULATED", "LOCKED"] } },
+          orderBy: [{ year: "desc" }, { month: "desc" }],
+          include: { payslips: true, legalEntity: true },
+        })
+      : null;
+    return {
+      asOf: new Date().toISOString(),
+      headcount: people.length,
+      pendingLeave,
+      expiring,
+      fund: SALARY_ROLES.includes(user.role) ? fund : null,
+      byDepartment: [...byDepartment.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+      byStatus: [...byStatus.entries()].map(([name, count]) => ({ name, count })),
+      byContract: [...byContract.entries()].map(([name, count]) => ({ name, count })),
+      lastPayroll: lastRun
+        ? {
+            id: lastRun.id,
+            label: `${String(lastRun.month).padStart(2, "0")}/${lastRun.year}`,
+            company: lastRun.legalEntity.name,
+            status: lastRun.status,
+            net: lastRun.payslips.reduce((sum, item) => sum + item.net, 0),
+            gross: lastRun.payslips.reduce((sum, item) => sum + item.gross, 0),
+            pit: lastRun.payslips.reduce((sum, item) => sum + item.pit, 0),
+            insurance: lastRun.payslips.reduce((sum, item) => sum + item.insuranceEmployee + item.insuranceEmployer, 0),
+          }
+        : null,
+    };
+  }
+
+  async saveAllowances(
+    user: AuthUser,
+    id: string,
+    items: Array<{ code?: string; name?: string; amount?: number; taxable?: boolean }>,
+  ) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL"]);
+    await this.assertInScope(user, id);
+    if (!Array.isArray(items) || items.length > 20) throw new BadRequestException("Tối đa 20 khoản phụ cấp");
+    const rows = items.map((item, index) => {
+      const name = item.name?.trim() ?? "";
+      const amount = Math.round(Number(item.amount));
+      if (name.length < 2 || !(amount > 0)) throw new BadRequestException("Phụ cấp phải có tên và số tiền");
+      return {
+        employeeId: id,
+        code: (item.code?.trim() || `PC${index + 1}`).toUpperCase(),
+        name,
+        amount,
+        taxable: item.taxable !== false,
+      };
+    });
+    await this.prisma.$transaction([
+      this.prisma.allowance.deleteMany({ where: { employeeId: id } }),
+      ...rows.map((row) => this.prisma.allowance.create({ data: row })),
+    ]);
+    await this.audit(user, "UPDATE_ALLOWANCES", "Employee", id);
+    return this.employee(user, id);
+  }
+
+  async transfer(user: AuthUser, id: string, body: { departmentId?: string; jobTitle?: string; reason?: string; effectiveDate?: string }) {
+    this.requireRole(user, ["ADMIN", "HR"]);
+    const employee = await this.prisma.employee.findUnique({ where: { id }, include: { department: true } });
+    if (!employee) throw new NotFoundException("Không thấy nhân sự");
+    if (employee.status === "TERMINATED") throw new BadRequestException("Người đã nghỉ việc");
+    const department = await this.prisma.department.findUnique({ where: { id: String(body.departmentId ?? "") } });
+    if (!department) throw new BadRequestException("Phòng ban không tồn tại");
+    const jobTitle = body.jobTitle?.trim() || employee.jobTitle;
+    const reason = body.reason?.trim();
+    if (!reason) throw new BadRequestException("Ghi rõ lý do điều chuyển / bổ nhiệm");
+    const effectiveDate = body.effectiveDate ? new Date(body.effectiveDate) : new Date();
+    await this.prisma.$transaction([
+      this.prisma.orgMove.create({
+        data: {
+          employeeId: id,
+          fromDepartment: employee.department.name,
+          toDepartment: department.name,
+          fromTitle: employee.jobTitle,
+          toTitle: jobTitle,
+          reason,
+          effectiveDate,
+        },
+      }),
+      this.prisma.employee.update({ where: { id }, data: { departmentId: department.id, jobTitle } }),
+    ]);
+    await this.audit(user, "TRANSFER", "Employee", id);
+    return this.employee(user, id);
   }
 
   private presentEmployee(

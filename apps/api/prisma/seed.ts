@@ -10,6 +10,8 @@ async function main() {
   await prisma.payslip.deleteMany();
   await prisma.payrollRun.deleteMany();
   await prisma.payrollAdjustment.deleteMany();
+  await prisma.allowance.deleteMany();
+  await prisma.orgMove.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.dependent.deleteMany();
   await prisma.leaveRequest.deleteMany();
@@ -168,8 +170,14 @@ async function main() {
       reason: "Ứng lương ngày 15/09",
     },
   });
+  await prisma.allowance.createMany({
+    data: [
+      { employeeId: created.get("NV009")!, code: "XANG", name: "Phụ cấp xăng xe", amount: 500_000, taxable: true },
+      { employeeId: created.get("NV003")!, code: "DT", name: "Điện thoại", amount: 300_000, taxable: false },
+    ],
+  });
 
-  const employees = await prisma.employee.findMany({ where: { status: { not: "TERMINATED" } } });
+  const employees = await prisma.employee.findMany({ where: { status: { not: "TERMINATED" } }, include: { allowances: true } });
   const times = await prisma.timeEntry.findMany({ where: { year: 2026, month: 9 } });
   const timeById = new Map(times.map((item) => [item.employeeId, item]));
   const leaveRows = await prisma.leaveRequest.findMany({ where: { status: "APPROVED" } });
@@ -204,6 +212,12 @@ async function main() {
       otWeekendHours: time?.otWeekendHours ?? 0,
       otHolidayHours: time?.otHolidayHours ?? 0,
       nightHours: time?.nightHours ?? 0,
+      allowances: employee.allowances.map((item) => ({
+        code: item.code,
+        name: item.name,
+        amount: item.amount,
+        taxable: item.taxable,
+      })),
       sickDays: absences.sickDays,
       maternityDays: absences.maternityDays,
       advance: mine.filter((item) => item.kind === "ADVANCE").reduce((sum, item) => sum + item.amount, 0),

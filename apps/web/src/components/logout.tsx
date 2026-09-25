@@ -1,16 +1,19 @@
 "use client";
 
+import { LogOut } from "lucide-react";
+
 export function LogoutButton() {
   return (
     <button
-      className="ghost"
-      style={{ marginTop: 8, paddingLeft: 0 }}
+      type="button"
+      title="Đăng xuất"
+      className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
       onClick={async () => {
         await fetch("/backend/api/auth/logout", { method: "POST" });
         window.location.href = "/login";
       }}
     >
-      Đăng xuất
+      <LogOut className="size-4" />
     </button>
   );
 }

@@ -175,6 +175,7 @@ export class PayrollService {
     const run = await this.prisma.payrollRun.findUniqueOrThrow({ where: { id: runId } });
     const employees = await this.prisma.employee.findMany({
       where: { legalEntityId: run.legalEntityId, status: { not: "TERMINATED" } },
+      include: { allowances: true },
     });
     const times = await this.prisma.timeEntry.findMany({ where: { year: run.year, month: run.month } });
     const timeByEmployee = new Map(times.map((item) => [item.employeeId, item]));
@@ -239,6 +240,12 @@ export class PayrollService {
             otWeekendHours: time?.otWeekendHours ?? 0,
             otHolidayHours: time?.otHolidayHours ?? 0,
             nightHours: time?.nightHours ?? 0,
+            allowances: employee.allowances.map((item) => ({
+              code: item.code,
+              name: item.name,
+              amount: item.amount,
+              taxable: item.taxable,
+            })),
             sickDays: absences.sickDays,
             maternityDays: absences.maternityDays,
             advance,

@@ -157,6 +157,36 @@ model Employee {
   payslips        Payslip[]
   dependentPeople Dependent[]
   adjustments     PayrollAdjustment[]
+  allowances      Allowance[]
+  orgMoves        OrgMove[]
+}
+
+model Allowance {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  code       String
+  name       String
+  amount     Int
+  taxable    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+}
+
+model OrgMove {
+  id               String   @id @default(cuid())
+  employeeId       String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  fromDepartment   String
+  toDepartment     String
+  fromTitle        String
+  toTitle          String
+  reason           String
+  effectiveDate    DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([employeeId])
 }
 
 model PayrollAdjustment {

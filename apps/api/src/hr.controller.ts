@@ -12,6 +12,11 @@ export class HrController {
     return this.hr.dashboard(req.user!);
   }
 
+  @Get("reports")
+  reports(@Req() req: RequestWithUser) {
+    return this.hr.reports(req.user!);
+  }
+
   @Get("departments")
   departments() {
     return this.hr.departments();
@@ -102,6 +107,24 @@ export class HrController {
     @Body() body: { people?: Array<{ fullName?: string; relation?: "CHILD" | "SPOUSE" | "PARENT" | "OTHER"; birthDate?: string }> },
   ) {
     return this.hr.saveDependents(req.user!, id, body.people ?? []);
+  }
+
+  @Post("employees/:id/allowances")
+  saveAllowances(
+    @Req() req: RequestWithUser,
+    @Param("id") id: string,
+    @Body() body: { items?: Array<{ code?: string; name?: string; amount?: number; taxable?: boolean }> },
+  ) {
+    return this.hr.saveAllowances(req.user!, id, body.items ?? []);
+  }
+
+  @Post("employees/:id/transfer")
+  transfer(
+    @Req() req: RequestWithUser,
+    @Param("id") id: string,
+    @Body() body: { departmentId?: string; jobTitle?: string; reason?: string; effectiveDate?: string },
+  ) {
+    return this.hr.transfer(req.user!, id, body);
   }
 
   @Post("employees/:id/offboard")

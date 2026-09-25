@@ -10,6 +10,8 @@ const actionLabel: Record<string, string> = {
   LEAVE_APPROVED: "Duyệt đơn nghỉ",
   LEAVE_REJECTED: "Từ chối đơn nghỉ",
   ADD_ADJUSTMENT: "Ghi tạm ứng / truy lĩnh",
+  UPDATE_ALLOWANCES: "Cập nhật phụ cấp",
+  TRANSFER: "Điều chuyển / bổ nhiệm",
   QUEUE_PAYROLL: "Đưa kỳ lương vào hàng đợi",
   CALCULATE_PAYROLL: "Tính lương",
   LOCK_PAYROLL: "Khóa kỳ lương",
