@@ -49,6 +49,13 @@ APP_HOME="$(getent passwd "${APP_USER}" | cut -d: -f6)"
 APP_HOME="${APP_HOME:-/var/lib/so-nhan}"
 mkdir -p "${APP_HOME}"
 
+# Lần cài cũ chown sonhan cả ~/so-nhan → git pull bị Permission denied. Trả về user đang cài.
+if [[ "${APP_USER}" != "root" ]]; then
+  echo ">> Trả quyền repo cho ${APP_USER} (không để sonhan giữ .git)"
+  chown -R "${APP_USER}:${APP_USER}" "${REPO_DIR}"
+  sudo -u "${APP_USER}" git config --global --add safe.directory "${REPO_DIR}" 2>/dev/null || true
+fi
+
 LOG="/var/log/so-nhan-cai-dat.log"
 mkdir -p /var/log /etc/so-nhan
 exec > >(tee -a "${LOG}") 2>&1

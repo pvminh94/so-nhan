@@ -89,15 +89,16 @@ Không seed mặc định (seed xóa dữ liệu HRMS). Demo một lần:
 sudo bash deploy/cai-dat-vps.sh --seed
 ```
 
-Nếu cài xong mà `health=000` (curl không vào được):
+Nếu `git pull` báo *dubious ownership* hoặc `Permission denied` trên `.git/FETCH_HEAD`: lần cài cũ đã `chown sonhan` cả thư mục. Trả quyền rồi kéo code:
 
 ```bash
-cd ~/so-nhan
+sudo chown -R bvqy4:bvqy4 /home/bvqy4/so-nhan
+cd /home/bvqy4/so-nhan
 git pull
 sudo bash deploy/cai-dat-vps.sh --fix
 ```
 
-`--fix` chỉ viết lại systemd (chạy bằng user của bạn, gọi `node …/tsx` thẳng, không `npx`) rồi restart. Xem lỗi: `journalctl -u so-nhan-api -n 80`.
+`--fix` cũng tự `chown` lại user đang cài, rồi viết systemd.
 
 ## Chạy local
 
