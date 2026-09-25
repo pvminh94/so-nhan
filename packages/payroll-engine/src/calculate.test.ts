@@ -265,7 +265,7 @@ describe("sổ cái phép", () => {
   });
 
   it("không cho dùng quá phép tồn", () => {
-    expect(() => assertLeaveAvailable(1, 2)).toThrow(/phép tồn/);
+    expect(() => assertLeaveAvailable(1, 2)).toThrow(/phép năm/);
     expect(() => assertLeaveAvailable(2, 2)).not.toThrow();
   });
 });
@@ -316,5 +316,91 @@ describe("file ngân hàng", () => {
     );
     expect(file.missingAccounts).toEqual(["NV001"]);
     expect(() => reconcileBankFile(file.csv, 2_000_000)).toThrow(/thực nhận/);
+  });
+});
+
+describe("ốm, thai sản, tạm ứng, truy lĩnh", () => {
+  it("ốm đau: quỹ BHXH trợ cấp 75%, lương công ty không đổi", () => {
+    const base = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+    });
+    const sick = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+      sickDays: 4,
+    });
+    expect(sick.net).toBe(base.net);
+    expect(sick.lines.find((line) => line.code === "BHXH_SICK")?.amount).toBe(2_500_000);
+    expect(sick.lines.find((line) => line.code === "BHXH_SICK")?.pitTreatment).toBe("info");
+  });
+
+  it("thai sản: quỹ BHXH trợ cấp 100%/30 ngày, không trừ quỹ lương", () => {
+    const result = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      standardDays: 22,
+      workedDays: 0,
+      unpaidDays: 0,
+      maternityDays: 30,
+    });
+    expect(result.lines.find((line) => line.code === "BHXH_MATERNITY")?.amount).toBe(20_000_000);
+    expect(result.warnings.some((item) => item.includes("thai sản"))).toBe(true);
+  });
+
+  it("tạm ứng trừ thực nhận, không tăng thuế", () => {
+    const base = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+    });
+    const withAdvance = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+      advance: 2_000_000,
+    });
+    expect(withAdvance.pit).toBe(base.pit);
+    expect(withAdvance.net).toBe(base.net - 2_000_000);
+  });
+
+  it("truy lĩnh cộng vào lương chịu thuế", () => {
+    const base = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+    });
+    const withRetro = calculatePayslip({
+      period: sep,
+      region: "I",
+      baseSalary: 20_000_000,
+      insuranceSalary: 20_000_000,
+      dependents: 0,
+      ...fullMonth,
+      retros: [{ name: "Truy lĩnh OT kỳ 8", amount: 1_000_000 }],
+    });
+    expect(withRetro.gross).toBe(base.gross + 1_000_000);
+    expect(withRetro.taxableEarnings).toBe(base.taxableEarnings + 1_000_000);
+    expect(withRetro.pit).toBeGreaterThan(base.pit);
   });
 });

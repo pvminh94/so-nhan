@@ -19,7 +19,7 @@ export default async function TeamPage() {
         <div className="top">
           <div>
             <h1>Nhóm</h1>
-            <p className="sub">Trang này dành cho quản lý xem cấp dưới. Lương không hiện ở đây.</p>
+            <p className="sub">Trang này để quản lý xem người mình phụ trách. Lương đồng nghiệp không hiện ở đây.</p>
           </div>
         </div>
       </>

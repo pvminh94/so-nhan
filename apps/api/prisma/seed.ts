@@ -1,6 +1,6 @@
 import { PrismaClient, type WageRegion } from "@prisma/client";
 import { hash } from "bcryptjs";
-import { annualLeaveEntitlement, calculatePayslip, rulePackPayload, VN_RULE_PACKS } from "@so-nhan/payroll-engine";
+import { annualLeaveEntitlement, calculatePayslip, rulePackPayload, summarizeAbsences, VN_RULE_PACKS } from "@so-nhan/payroll-engine";
 
 const prisma = new PrismaClient();
 const password = "Sonhan@2026";
@@ -9,6 +9,9 @@ async function main() {
   await prisma.payslipLine.deleteMany();
   await prisma.payslip.deleteMany();
   await prisma.payrollRun.deleteMany();
+  await prisma.payrollAdjustment.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.dependent.deleteMany();
   await prisma.leaveRequest.deleteMany();
   await prisma.leaveLedger.deleteMany();
   await prisma.leaveBalance.deleteMany();
@@ -142,15 +145,52 @@ async function main() {
       decidedAt: new Date("2026-09-05"),
     },
   });
+  await prisma.leaveRequest.create({
+    data: {
+      employeeId: created.get("NV008")!,
+      type: "SICK",
+      startDate: new Date("2026-09-10"),
+      endDate: new Date("2026-09-12"),
+      days: 3,
+      reason: "Ốm, có giấy của trạm y tế",
+      status: "APPROVED",
+      approverId: created.get("NV002"),
+      decidedAt: new Date("2026-09-10"),
+    },
+  });
+  await prisma.payrollAdjustment.create({
+    data: {
+      employeeId: created.get("NV004")!,
+      year: 2026,
+      month: 9,
+      kind: "ADVANCE",
+      amount: 1_500_000,
+      reason: "Ứng lương ngày 15/09",
+    },
+  });
 
   const employees = await prisma.employee.findMany({ where: { status: { not: "TERMINATED" } } });
   const times = await prisma.timeEntry.findMany({ where: { year: 2026, month: 9 } });
   const timeById = new Map(times.map((item) => [item.employeeId, item]));
+  const leaveRows = await prisma.leaveRequest.findMany({ where: { status: "APPROVED" } });
+  const adjRows = await prisma.payrollAdjustment.findMany({ where: { year: 2026, month: 9 } });
   const run = await prisma.payrollRun.create({
     data: { legalEntityId: company.id, year: 2026, month: 9, status: "CALCULATED", ruleVersion: "vn-2026.07" },
   });
   for (const employee of employees) {
     const time = timeById.get(employee.id);
+    const absences = summarizeAbsences(
+      leaveRows.filter((item) => item.employeeId === employee.id).map((item) => ({
+        type: item.type,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        days: item.days,
+        status: item.status,
+      })),
+      2026,
+      9,
+    );
+    const mine = adjRows.filter((item) => item.employeeId === employee.id);
     const result = calculatePayslip({
       period: { year: 2026, month: 9 },
       region: "I",
@@ -164,6 +204,11 @@ async function main() {
       otWeekendHours: time?.otWeekendHours ?? 0,
       otHolidayHours: time?.otHolidayHours ?? 0,
       nightHours: time?.nightHours ?? 0,
+      sickDays: absences.sickDays,
+      maternityDays: absences.maternityDays,
+      advance: mine.filter((item) => item.kind === "ADVANCE").reduce((sum, item) => sum + item.amount, 0),
+      otherDeductions: mine.filter((item) => item.kind === "DEDUCTION").reduce((sum, item) => sum + item.amount, 0),
+      retros: mine.filter((item) => item.kind === "RETRO").map((item) => ({ name: "Truy lĩnh", amount: item.amount, reason: item.reason })),
     });
     await prisma.payslip.create({
       data: {

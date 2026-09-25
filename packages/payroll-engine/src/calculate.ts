@@ -1,3 +1,4 @@
+import { bhxhBenefit } from "./leave-policy";
 import {
   overtimeCaps,
   pitOnAssessable,
@@ -35,6 +36,12 @@ export type PayrollInput = {
   allowances?: Array<{ code: string; name: string; amount: number; taxable: boolean }>;
   yearlyOtHours?: number;
   yearlyOtCap?: 200 | 300;
+  sickDays?: number;
+  maternityDays?: number;
+  advance?: number;
+  otherDeductions?: number;
+  otherDeductionNote?: string;
+  retros?: Array<{ code?: string; name: string; amount: number; reason?: string; taxable?: boolean }>;
   rules?: RulePack;
   packs?: RulePack[];
 };
@@ -153,6 +160,24 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
     });
   }
 
+  let retroTotal = 0;
+  let retroTaxable = 0;
+  for (const [index, retro] of (input.retros ?? []).entries()) {
+    const amount = roundVnd(retro.amount);
+    if (!amount) continue;
+    retroTotal += amount;
+    const taxable = retro.taxable !== false;
+    if (taxable) retroTaxable += amount;
+    lines.push({
+      code: retro.code ?? `RETRO_${index + 1}`,
+      name: retro.name,
+      amount,
+      formula: retro.reason ?? "Truy lĩnh kỳ trước. Kỳ đã khóa không sửa đè, cộng vào kỳ này.",
+      pitTreatment: taxable ? "taxable" : "exempt",
+      sort: 40 + index,
+    });
+  }
+
   const insurance = resolveInsuranceBase(input, pack);
   const insuranceEmployee = roundVnd(insurance.base * pack.employeeRate);
   const insuranceEmployer = roundVnd(insurance.base * pack.employerRate);
@@ -174,7 +199,7 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
     sort: 81,
   });
 
-  const taxableEarnings = prorated + allowanceTaxable;
+  const taxableEarnings = prorated + allowanceTaxable + retroTaxable;
   const deduction = pack.personalDeduction + input.dependents * pack.dependentDeduction;
   const assessable = Math.max(0, taxableEarnings - insuranceEmployee - deduction);
   const pit = pitOnAssessable(assessable, pack.pitBrackets);
@@ -188,8 +213,55 @@ export function calculatePayslip(input: PayrollInput): PayrollResult {
     sort: 90,
   });
 
-  const gross = prorated + allowanceTotal + otWeekday + otWeekend + otHoliday + night;
-  const net = gross - insuranceEmployee - pit;
+  const advance = roundVnd(input.advance ?? 0);
+  if (advance) {
+    lines.push({
+      code: "ADVANCE",
+      name: "Trừ tạm ứng lương",
+      amount: advance,
+      formula: "Đã ứng trước, trừ khi trả lương tháng này. Không tính vào thu nhập chịu thuế.",
+      pitTreatment: "deduction",
+      sort: 96,
+    });
+  }
+  const otherDeduct = roundVnd(input.otherDeductions ?? 0);
+  if (otherDeduct) {
+    lines.push({
+      code: "DEDUCT",
+      name: "Khấu trừ khác",
+      amount: otherDeduct,
+      formula: input.otherDeductionNote ?? "Khấu trừ theo quyết định",
+      pitTreatment: "deduction",
+      sort: 97,
+    });
+  }
+
+  const sickDays = input.sickDays ?? 0;
+  if (sickDays > 0) {
+    lines.push({
+      code: "BHXH_SICK",
+      name: "Trợ cấp ốm đau (quỹ BHXH)",
+      amount: bhxhBenefit("SICK", sickDays, input.insuranceSalary),
+      formula: `${sickDays} ngày × 75% × lương đóng BHXH / 24 ngày. Quỹ BHXH chi, không lấy từ lương công ty.`,
+      pitTreatment: "info",
+      sort: 110,
+    });
+  }
+  const maternityDays = input.maternityDays ?? 0;
+  if (maternityDays > 0) {
+    lines.push({
+      code: "BHXH_MATERNITY",
+      name: "Trợ cấp thai sản (quỹ BHXH)",
+      amount: bhxhBenefit("MATERNITY", maternityDays, input.insuranceSalary),
+      formula: `${maternityDays} ngày × 100% × lương đóng BHXH / 30 ngày. Tạm tính theo lương đóng hiện tại; hồ sơ BHXH lấy bình quân 6 tháng.`,
+      pitTreatment: "info",
+      sort: 111,
+    });
+    warnings.push(`Nghỉ thai sản ${maternityDays} ngày trong tháng. Trợ cấp do quỹ BHXH chi, không trừ quỹ lương công ty.`);
+  }
+
+  const gross = prorated + allowanceTotal + otWeekday + otWeekend + otHoliday + night + retroTotal;
+  const net = gross - insuranceEmployee - pit - advance - otherDeduct;
   const monthlyOt = (input.otWeekdayHours ?? 0) + (input.otWeekendHours ?? 0) + (input.otHolidayHours ?? 0);
   const caps = overtimeCaps(input.yearlyOtCap ?? 200);
   if (monthlyOt > caps.monthly) {

@@ -21,6 +21,19 @@ export class PayrollController {
     return this.payroll.addRule(req.user!, body);
   }
 
+  @Get("payroll/adjustments")
+  adjustments(@Req() req: RequestWithUser, @Query("year") year?: string, @Query("month") month?: string) {
+    return this.payroll.listAdjustments(req.user!, Number(year ?? 2026), Number(month ?? 9));
+  }
+
+  @Post("payroll/adjustments")
+  addAdjustment(
+    @Req() req: RequestWithUser,
+    @Body() body: { employeeId?: string; year?: number; month?: number; kind?: "ADVANCE" | "RETRO" | "DEDUCTION"; amount?: number; reason?: string },
+  ) {
+    return this.payroll.addAdjustment(req.user!, body);
+  }
+
   @Get("payroll/runs")
   runs() {
     return this.payroll.runs();

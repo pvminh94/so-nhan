@@ -239,6 +239,10 @@ if [[ ${FIX} -eq 0 ]]; then
   fi
 fi
 
+echo ">> Prisma generate + db push"
+cd "${REPO_DIR}/apps/api"
+sudo -u "${APP_USER}" -H npx prisma generate
+sudo -u "${APP_USER}" -H npx prisma db push
 echo ">> Build web"
 cd "${REPO_DIR}/apps/web"
 sudo -u "${APP_USER}" -H npx next build

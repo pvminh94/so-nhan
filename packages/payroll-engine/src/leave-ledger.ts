@@ -30,8 +30,8 @@ export function leaveBalanceFromLedger(entries: LeaveLedgerEntry[]): LeaveLedger
 }
 
 export function assertLeaveAvailable(remaining: number, days: number) {
-  if (!(days > 0)) throw new Error("Số ngày phép phải lớn hơn 0");
-  if (days - remaining > 1e-6) throw new Error("Không đủ phép tồn");
+  if (!(days > 0)) throw new Error("Số ngày nghỉ phải lớn hơn 0");
+  if (days - remaining > 1e-6) throw new Error("Không còn đủ ngày phép năm");
 }
 
 function roundDays(value: number) {

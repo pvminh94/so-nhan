@@ -20,9 +20,9 @@ export default async function PayrollPage() {
     <>
       <div className="top">
         <div>
-          <p className="hello">Bảng lương · khóa được mới là kỳ thật</p>
+          <p className="hello">Bảng lương · khóa xong mới coi là kỳ thật</p>
           <h1>Kỳ lương</h1>
-          <p className="sub">Bấm tính là đưa vào hàng đợi. Worker riêng tính, API không bị nghẽn. Hai kỳ song song, sai lệch phải có lý do.</p>
+          <p className="sub">Bấm Tính lương, máy tính lương chạy riêng. Hai kỳ cạnh nhau, lệch phải nói được vì sao.</p>
         </div>
         <PayrollActions canRun={canRun} />
       </div>

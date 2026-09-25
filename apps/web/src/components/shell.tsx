@@ -40,6 +40,7 @@ function linksFor(role: Me["role"]): Item[] {
     { href: "/leave", label: "Nghỉ phép", icon: "leave", group: "Thời gian" },
     { href: "/attendance", label: "Chấm công", icon: "clock", group: "Thời gian" },
     { href: "/payroll", label: "Kỳ lương", icon: "pay", group: "Lương" },
+    { href: "/payroll/adjustments", label: "Tạm ứng / truy lĩnh", icon: "pay", group: "Lương" },
     { href: "/statutory", label: "Tham số luật", icon: "law", group: "Lương" },
     { href: "/audit", label: "Nhật ký", icon: "log", group: "Hệ thống" },
     { href: "/notifications", label: "Thông báo", icon: "bell", group: "Hệ thống" },
@@ -74,6 +75,7 @@ function Icon({ name }: { name: string }) {
 
 function active(path: string, href: string) {
   if (href === "/") return path === "/";
+  if (href === "/payroll") return path === "/payroll" || /^\/payroll\/[^/]+$/.test(path);
   return path === href || path.startsWith(`${href}/`);
 }
 
@@ -94,7 +96,7 @@ export function Shell({ me, path, unread = 0, children }: { me: Me; path: string
           <div className="mark">SN</div>
           <div>
             <b>Sổ Nhân</b>
-            <span>HRMS doanh nghiệp</span>
+            <span>Nhân sự · lương · bảo hiểm</span>
           </div>
         </div>
         <div className="company-chip">

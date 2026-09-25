@@ -39,11 +39,18 @@ Sau khi `git pull` giao diện: `sudo bash deploy/cai-dat-vps.sh --fix` (có bui
 6. Tải file ngân hàng. Tổng file phải bằng tổng thực nhận. Thiếu số tài khoản thì không xuất. Dòng `# CONTROL` giữ số dòng, tổng, SHA-256.
 7. Tải bút toán. Nợ phải bằng có.
 
-## Phép
+## Phép và vắng mặt
 
-Quỹ phép là sổ cái: cộng quỹ, dùng, quyết toán khi nghỉ. Xin quá tồn thì bị từ chối. Duyệt phép năm ghi dòng `USAGE`. Không sửa một ô số dư.
+Quỹ phép năm là sổ cái: cộng quỹ, dùng, quyết toán khi nghỉ. Xin quá số ngày còn lại thì bị từ chối. Duyệt phép năm ghi dòng `USAGE`. Không sửa một ô số dư.
 
-Ốm đau / thai sản tách người trả (công ty hay quỹ BHXH) chưa làm.
+- Phép năm: công ty trả lương, trừ quỹ phép.
+- Nghỉ không lương: không trả. Từ 14 ngày trong tháng thì không đóng BHXH tháng đó.
+- Ốm đau: công ty không trả lương; phiếu lương ghi trợ cấp quỹ BHXH 75% × lương đóng / 24 ngày (dòng thông tin, không trừ quỹ lương).
+- Thai sản: công ty không trả lương; trợ cấp quỹ BHXH 100% / 30 ngày, tạm tính theo lương đóng hiện tại.
+
+## Tạm ứng và truy lĩnh
+
+Trang `/payroll/adjustments`. Tạm ứng trừ thực nhận, không tính thuế. Truy lĩnh cộng vào lương chịu thuế — dùng khi kỳ trước đã khóa. Kỳ đã khóa thì không ghi thêm vào kỳ đó, ghi vào kỳ sau. Ghi xong phải tính lại kỳ lương.
 
 ## Phạm vi xem
 

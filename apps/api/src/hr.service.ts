@@ -1,15 +1,16 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { LeaveStatus, LeaveType, Prisma, type Role } from "@prisma/client";
-import { annualLeaveEntitlement, assertLeaveAvailable, attendanceLockDecision, attendanceTemplate, dependentWarning, leaveBalanceFromLedger, parseAttendanceCsv } from "@so-nhan/payroll-engine";
+import { annualLeaveEntitlement, assertLeaveAvailable, attendanceLockDecision, attendanceTemplate, dependentWarning, LEAVE_POLICY, leaveBalanceFromLedger, parseAttendanceCsv, type AbsenceKind } from "@so-nhan/payroll-engine";
 import type { DependentRelation } from "@prisma/client";
 import { canSeeSalary, SALARY_ROLES, type AuthUser } from "./common";
 import { PrismaService } from "./prisma.service";
 
 const leaveLabel: Record<LeaveType, string> = {
-  ANNUAL: "Phép năm",
-  UNPAID: "Không lương",
-  SICK: "Ốm đau",
-  OTHER: "Khác",
+  ANNUAL: LEAVE_POLICY.ANNUAL.label,
+  UNPAID: LEAVE_POLICY.UNPAID.label,
+  SICK: LEAVE_POLICY.SICK.label,
+  MATERNITY: LEAVE_POLICY.MATERNITY.label,
+  OTHER: LEAVE_POLICY.OTHER.label,
 };
 
 @Injectable()
@@ -249,6 +250,7 @@ export class HrService {
       id: row.id,
       type: row.type,
       typeLabel: leaveLabel[row.type],
+      payer: LEAVE_POLICY[row.type as AbsenceKind]?.payerLabel ?? "",
       startDate: row.startDate,
       endDate: row.endDate,
       days: row.days,
@@ -259,17 +261,18 @@ export class HrService {
   }
 
   async requestLeave(user: AuthUser, body: { type?: LeaveType; startDate?: string; endDate?: string; days?: number; reason?: string }) {
-    if (!user.employeeId) throw new ForbiddenException("Tài khoản này không gắn hồ sơ nhân sự");
+    if (!user.employeeId) throw new ForbiddenException("Tài khoản chưa gắn với hồ sơ nhân viên nên không gửi đơn được");
     const days = Number(body.days);
-    if (!body.startDate || !body.endDate || !body.reason || !(days > 0)) throw new BadRequestException("Thiếu ngày hoặc lý do");
+    if (!body.startDate || !body.endDate || !body.reason || !(days > 0)) throw new BadRequestException("Thiếu ngày nghỉ hoặc lý do");
     const type = body.type ?? "ANNUAL";
+    if (!LEAVE_POLICY[type as AbsenceKind]) throw new BadRequestException("Loại nghỉ không hợp lệ");
     if (type === "ANNUAL") {
       const year = new Date(body.startDate).getFullYear();
       const snap = await this.ensureLeaveLedger(this.prisma, user.employeeId, year);
       try {
         assertLeaveAvailable(snap.remaining, days);
       } catch (error) {
-        throw new BadRequestException(error instanceof Error ? error.message : "Không đủ phép tồn");
+        throw new BadRequestException(error instanceof Error ? error.message : "Không còn đủ ngày phép năm");
       }
     }
     const created = await this.prisma.leaveRequest.create({
@@ -290,8 +293,8 @@ export class HrService {
     const hr = await this.prisma.user.findMany({ where: { role: { in: ["HR", "ADMIN"] } }, select: { id: true } });
     await this.notify(
       [...hr.map((item) => item.id), employee?.manager?.user?.id].filter((id): id is string => Boolean(id && id !== user.id)),
-      "Đơn nghỉ phép mới",
-      `${user.fullName} xin ${days} ngày: ${body.reason.trim()}`,
+      `Đơn ${leaveLabel[type]} mới`,
+      `${user.fullName} xin ${days} ngày ${leaveLabel[type].toLowerCase()}: ${body.reason.trim()}`,
       "/leave",
     );
     return created;
@@ -317,7 +320,7 @@ export class HrService {
         try {
           assertLeaveAvailable(snap.remaining, request.days);
         } catch (error) {
-          throw new BadRequestException(error instanceof Error ? error.message : "Không đủ phép tồn");
+          throw new BadRequestException(error instanceof Error ? error.message : "Không còn đủ ngày phép năm");
         }
         await tx.leaveLedger.create({
           data: {
@@ -325,7 +328,7 @@ export class HrService {
             year,
             kind: "USAGE",
             days: -request.days,
-            note: "Duyệt đơn nghỉ phép",
+            note: "Duyệt phép năm",
             requestId: id,
           },
         });
@@ -343,7 +346,7 @@ export class HrService {
     if (owner && owner.id !== user.id) {
       await this.notify(
         [owner.id],
-        status === "APPROVED" ? "Đơn nghỉ phép đã duyệt" : "Đơn nghỉ phép bị từ chối",
+        status === "APPROVED" ? "Đơn nghỉ đã được duyệt" : "Đơn nghỉ bị từ chối",
         `${request.days} ngày từ ${request.startDate.toISOString().slice(0, 10)}`,
         "/leave",
       );

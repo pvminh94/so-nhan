@@ -13,7 +13,7 @@ export default async function NotificationsPage() {
       <div className="top">
         <div>
           <h1>Thông báo</h1>
-          <p className="sub">{box?.unread ?? 0} chưa đọc. Đơn phép gửi cho quản lý và nhân sự.</p>
+          <p className="sub">{box?.unread ?? 0} tin chưa đọc. Đơn nghỉ gửi cho quản lý và nhân sự.</p>
         </div>
         <MarkRead disabled={!box?.unread} />
       </div>

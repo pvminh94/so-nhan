@@ -39,7 +39,14 @@ enum LeaveType {
   ANNUAL
   UNPAID
   SICK
+  MATERNITY
   OTHER
+}
+
+enum AdjustmentKind {
+  ADVANCE
+  RETRO
+  DEDUCTION
 }
 
 enum LeaveStatus {
@@ -149,6 +156,21 @@ model Employee {
   timeEntries     TimeEntry[]
   payslips        Payslip[]
   dependentPeople Dependent[]
+  adjustments     PayrollAdjustment[]
+}
+
+model PayrollAdjustment {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   Employee        @relation(fields: [employeeId], references: [id])
+  year       Int
+  month      Int
+  kind       AdjustmentKind
+  amount     Int
+  reason     String
+  createdAt  DateTime        @default(now())
+
+  @@index([employeeId, year, month])
 }
 
 model Dependent {

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { attendanceLockDecision, assertPackRange, buildBankFile, buildJournal, calculatePayslip, comparePayroll, parseRulePack, reconcileBankFile, resolveRulePack, rulePackPayload, statutorySnapshot, VN_RULE_PACKS, type RulePack, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
+import { attendanceLockDecision, assertPackRange, buildBankFile, buildJournal, calculatePayslip, comparePayroll, parseRulePack, reconcileBankFile, resolveRulePack, rulePackPayload, statutorySnapshot, summarizeAbsences, VN_RULE_PACKS, type AbsenceKind, type RulePack, type VarianceSlip, type WageRegion } from "@so-nhan/payroll-engine";
 import type { AuthUser } from "./common";
 import { SALARY_ROLES } from "./common";
 import { PrismaService } from "./prisma.service";
@@ -178,26 +178,76 @@ export class PayrollService {
     });
     const times = await this.prisma.timeEntry.findMany({ where: { year: run.year, month: run.month } });
     const timeByEmployee = new Map(times.map((item) => [item.employeeId, item]));
+    const leaves = await this.prisma.leaveRequest.findMany({
+      where: { status: "APPROVED", employeeId: { in: employees.map((item) => item.id) } },
+    });
+    const leavesByEmployee = new Map<string, typeof leaves>();
+    for (const row of leaves) {
+      const list = leavesByEmployee.get(row.employeeId) ?? [];
+      list.push(row);
+      leavesByEmployee.set(row.employeeId, list);
+    }
+    const adjustments = await this.prisma.payrollAdjustment.findMany({
+      where: { year: run.year, month: run.month, employeeId: { in: employees.map((item) => item.id) } },
+    });
+    const adjByEmployee = new Map<string, typeof adjustments>();
+    for (const row of adjustments) {
+      const list = adjByEmployee.get(row.employeeId) ?? [];
+      list.push(row);
+      adjByEmployee.set(row.employeeId, list);
+    }
     const packs = await this.loadPacks();
     const slips = employees.map((employee) => {
       const time = timeByEmployee.get(employee.id);
+      const absences = summarizeAbsences(
+        (leavesByEmployee.get(employee.id) ?? []).map((item) => ({
+          type: item.type as AbsenceKind,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          days: item.days,
+          status: item.status,
+        })),
+        run.year,
+        run.month,
+      );
+      const mine = adjByEmployee.get(employee.id) ?? [];
+      const advance = mine.filter((item) => item.kind === "ADVANCE").reduce((sum, item) => sum + item.amount, 0);
+      const otherDeductions = mine.filter((item) => item.kind === "DEDUCTION").reduce((sum, item) => sum + item.amount, 0);
+      const retros = mine
+        .filter((item) => item.kind === "RETRO")
+        .map((item) => ({ name: "Truy lĩnh", amount: item.amount, reason: item.reason }));
+      const warningsExtra: string[] = [];
+      if (absences.unpaidDays > (time?.unpaidDays ?? 0)) {
+        warningsExtra.push(
+          `Đơn nghỉ không lương ${absences.unpaidDays} ngày, bảng công chỉ ghi ${time?.unpaidDays ?? 0} ngày. Nhập lại công cho khớp.`,
+        );
+      }
       return {
         employee,
-        result: calculatePayslip({
-          period: { year: run.year, month: run.month },
-          packs,
-          region: employee.region as WageRegion,
-          baseSalary: employee.baseSalary,
-          insuranceSalary: employee.insuranceSalary,
-          dependents: employee.dependents,
-          standardDays: time?.standardDays ?? 22,
-          workedDays: time?.workedDays ?? 22,
-          unpaidDays: time?.unpaidDays ?? 0,
-          otWeekdayHours: time?.otWeekdayHours ?? 0,
-          otWeekendHours: time?.otWeekendHours ?? 0,
-          otHolidayHours: time?.otHolidayHours ?? 0,
-          nightHours: time?.nightHours ?? 0,
-        }),
+        result: (() => {
+          const result = calculatePayslip({
+            period: { year: run.year, month: run.month },
+            packs,
+            region: employee.region as WageRegion,
+            baseSalary: employee.baseSalary,
+            insuranceSalary: employee.insuranceSalary,
+            dependents: employee.dependents,
+            standardDays: time?.standardDays ?? 22,
+            workedDays: time?.workedDays ?? 22,
+            unpaidDays: time?.unpaidDays ?? 0,
+            otWeekdayHours: time?.otWeekdayHours ?? 0,
+            otWeekendHours: time?.otWeekendHours ?? 0,
+            otHolidayHours: time?.otHolidayHours ?? 0,
+            nightHours: time?.nightHours ?? 0,
+            sickDays: absences.sickDays,
+            maternityDays: absences.maternityDays,
+            advance,
+            otherDeductions,
+            retros,
+          });
+          result.warnings.push(...warningsExtra);
+          return result;
+        })(),
       };
     });
     await this.prisma.$transaction(async (tx) => {
@@ -333,6 +383,58 @@ export class PayrollService {
       previous: { id: previous.id, year: previousYear, month: previousMonth },
       ...comparePayroll(snap(row, row.year, row.month), snap(previous, previousYear, previousMonth)),
     };
+  }
+
+  async listAdjustments(user: AuthUser, year: number, month: number) {
+    this.requireRole(user, ["ADMIN", "HR", "PAYROLL"]);
+    const rows = await this.prisma.payrollAdjustment.findMany({
+      where: { year, month },
+      include: { employee: { include: { department: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      employeeId: row.employeeId,
+      code: row.employee.code,
+      fullName: row.employee.fullName,
+      department: row.employee.department.name,
+      year: row.year,
+      month: row.month,
+      kind: row.kind,
+      amount: row.amount,
+      reason: row.reason,
+      at: row.createdAt,
+    }));
+  }
+
+  async addAdjustment(
+    user: AuthUser,
+    body: { employeeId?: string; year?: number; month?: number; kind?: "ADVANCE" | "RETRO" | "DEDUCTION"; amount?: number; reason?: string },
+  ) {
+    this.requireRole(user, ["ADMIN", "PAYROLL"]);
+    const year = Number(body.year);
+    const month = Number(body.month);
+    const amount = Math.round(Number(body.amount));
+    const kind = body.kind;
+    if (!body.employeeId || !kind || !body.reason?.trim() || !(amount > 0) || year < 2020 || month < 1 || month > 12) {
+      throw new BadRequestException("Thiếu người, loại, số tiền hoặc lý do");
+    }
+    if (!["ADVANCE", "RETRO", "DEDUCTION"].includes(kind)) {
+      throw new BadRequestException("Loại không hợp lệ");
+    }
+    const employee = await this.prisma.employee.findUnique({ where: { id: body.employeeId } });
+    if (!employee || employee.status === "TERMINATED") throw new NotFoundException("Không thấy hồ sơ nhân viên");
+    const locked = await this.prisma.payrollRun.findFirst({
+      where: { legalEntityId: employee.legalEntityId, year, month, status: "LOCKED" },
+    });
+    if (locked) throw new BadRequestException("Kỳ lương này đã khóa. Ghi truy lĩnh vào kỳ sau, đừng sửa kỳ cũ.");
+    const created = await this.prisma.payrollAdjustment.create({
+      data: { employeeId: employee.id, year, month, kind, amount, reason: body.reason.trim() },
+    });
+    await this.prisma.auditLog.create({
+      data: { userId: user.id, action: "ADD_ADJUSTMENT", entity: "PayrollAdjustment", entityId: created.id, meta: { kind, amount } },
+    });
+    return created;
   }
 
   private async readyRun(user: AuthUser, id: string) {

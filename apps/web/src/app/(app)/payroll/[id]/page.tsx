@@ -122,6 +122,21 @@ export default async function PayrollDetail({ params }: { params: Promise<{ id: 
                 ))}
               </tbody>
             </table>
+            {slip.lines.some((line) => line.code.startsWith("BHXH_")) ? (
+              <>
+                <h2 style={{ marginTop: 14 }}>Do quỹ BHXH chi — không lấy từ lương công ty</h2>
+                <table>
+                  <tbody>
+                    {slip.lines.filter((line) => line.code.startsWith("BHXH_")).map((line) => (
+                      <tr key={line.id}>
+                        <td>{line.name}<div className="formula">{line.formula}</div></td>
+                        <td className="money">{vnd(line.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : null}
           </article>
         ))}
       </div>

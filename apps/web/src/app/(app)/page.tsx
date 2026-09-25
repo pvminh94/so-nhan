@@ -31,7 +31,7 @@ export default async function HomePage() {
         <div>
           <p className="hello">{greet}, {me.fullName}</p>
           <h1>Bảng điều khiển</h1>
-          <p className="sub">Công ty TNHH Sổ Nhân · kỳ 09/2026 · pháp nhân demo đủ hồ sơ, phép, công và lương.</p>
+          <p className="sub">Công ty TNHH Sổ Nhân · tháng 9/2026. Số liệu demo để chạy một kỳ lương thật sự.</p>
         </div>
       </div>
       <div className="grid">

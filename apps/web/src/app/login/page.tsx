@@ -39,13 +39,13 @@ export default function LoginPage() {
       <section className="hero">
         <div>
           <div className="k">Sổ Nhân · HRMS Việt Nam</div>
-          <h1>Quản trị con người như sổ cái, không như file Excel.</h1>
-          <p>Hồ sơ, chấm công, nghỉ phép, BHXH và thuế TNCN đi cùng một kỳ lương — khóa được, giải trình được, đối chiếu ngân hàng được.</p>
+          <h1>Hồ sơ, công, phép và lương nằm cùng một chỗ.</h1>
+          <p>Tính xong khóa được. Mỗi dòng trên phiếu lương có công thức. Ốm đau và thai sản do quỹ BHXH chi, không trộn vào quỹ lương công ty.</p>
           <ul className="hero-list">
-            <li><i>✓</i> Kỳ lương song song, sai lệch phải có lý do</li>
-            <li><i>✓</i> Pack luật 2026: BHXH 21,5/10,5 · PIT 5 bậc</li>
-            <li><i>✓</i> ESS / MSS theo vai trò, nhật ký kiểm toán</li>
-            <li><i>✓</i> File ngân hàng có checksum, không gửi nhầm người</li>
+            <li><i>✓</i> Hai kỳ lương cạnh nhau, lệch là phải giải thích</li>
+            <li><i>✓</i> Luật 2026: BHXH 21,5% / 10,5%, thuế TNCN 5 bậc</li>
+            <li><i>✓</i> Nhân viên xin nghỉ, quản lý duyệt, nhân sự thấy hết</li>
+            <li><i>✓</i> File chuyển khoản ngân hàng có mã kiểm, lệch là dừng</li>
           </ul>
         </div>
         <p style={{ fontSize: 13, opacity: 0.7 }}>Một codebase · ba tiến trình · dành cho doanh nghiệp khoảng 5.000 người.</p>

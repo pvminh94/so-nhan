@@ -32,8 +32,8 @@ export default async function AttendancePage() {
     <>
       <div className="top">
         <div>
-          <h1>Chấm công tháng 09/2026</h1>
-          <p className="sub">Nhập CSV khi kỳ còn mở. Khóa kỳ công xong mới được tính lương.</p>
+          <h1>Bảng công tháng 9/2026</h1>
+          <p className="sub">Nhập file khi kỳ còn mở. Khóa bảng công xong mới tính lương được.</p>
         </div>
       </div>
       {period ? <AttendanceLock period={period} canManage={me.role === "ADMIN" || me.role === "HR" || me.role === "PAYROLL"} /> : null}
