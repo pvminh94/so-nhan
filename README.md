@@ -20,6 +20,16 @@ Redis không cần VPS riêng. Hồ sơ scan để object storage. Keycloak ch�
 
 Engine lương là thư viện thuần `packages/payroll-engine`. API và worker gọi vào, không viết công thức trong giao diện.
 
+## VPS Ubuntu
+
+Nếu máy đã chạy dự án khác (ví dụ `bao_cao_tuan` cổng 3000 + Postgres 5432):
+
+```bash
+sudo bash deploy/cai-dat-vps.sh
+```
+
+Script kiểm tra cổng, không tắt dịch vụ cũ, tự chọn cổng trống. Chi tiết: [docs/van-hanh.md](docs/van-hanh.md).
+
 ## Chạy local
 
 ```bash

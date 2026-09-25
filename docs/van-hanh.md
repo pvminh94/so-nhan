@@ -65,6 +65,32 @@ Bảng `StatutoryRule`. `vn-2026.01` đến 06/2026 (trần 46,8 triệu). `vn-2
 
 Postgres mỗi đêm ra máy khác. Thử restore trước go-live. Hồ sơ scan không để trên đĩa web.
 
+## VPS Ubuntu (cổng 3000 và Postgres đã có dự án khác)
+
+`bao_cao_tuan` đang giữ **3000** và Postgres **5432** thì **không** tắt chúng.
+
+```bash
+cd /opt
+sudo git clone https://github.com/pvminh94/so-nhan.git
+cd so-nhan
+sudo bash deploy/cai-dat-vps.sh
+```
+
+Script tự:
+
+- Nếu 3000 bận → web Sổ Nhân 3001 (hoặc 3002, 3080…)
+- Nếu 5432 bận → dùng đúng Postgres đó, **tạo database `hrms` riêng**, không đụng database kia. Peer không được thì cụm mới cổng 5433.
+- Nếu 4000 bận → API 4001. API chỉ nghe `127.0.0.1`.
+- systemd: `so-nhan-web`, `so-nhan-api`, `so-nhan-worker`
+
+Không seed mặc định (seed xóa dữ liệu HRMS). Demo một lần:
+
+```bash
+sudo bash deploy/cai-dat-vps.sh --seed
+```
+
+Bí mật: `/etc/so-nhan/so-nhan.env`. Log cài: `/var/log/so-nhan-cai-dat.log`.
+
 ## Chạy local
 
 ```bash
