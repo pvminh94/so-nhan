@@ -243,18 +243,40 @@ if [[ ${FIX} -eq 0 ]]; then
 fi
 
 TSX="${REPO_DIR}/node_modules/tsx/dist/cli.mjs"
+[[ -f "${TSX}" ]] || TSX="${REPO_DIR}/apps/api/node_modules/tsx/dist/cli.mjs"
 NEXT="${REPO_DIR}/node_modules/next/dist/bin/next"
+[[ -f "${NEXT}" ]] || NEXT="${REPO_DIR}/apps/web/node_modules/next/dist/bin/next"
 if [[ ! -f "${TSX}" ]]; then
-  echo "Thiếu ${TSX}. Chạy lại không có --fix để npm ci."
+  echo "Thiếu tsx. Chạy lại KHÔNG có --fix: sudo bash deploy/cai-dat-vps.sh"
   exit 1
 fi
 if [[ ! -f "${NEXT}" ]]; then
-  echo "Thiếu ${NEXT}."
+  echo "Thiếu next."
   exit 1
 fi
+if [[ ! -d "${REPO_DIR}/apps/web/.next" ]]; then
+  echo "Chưa có apps/web/.next — build lại."
+  cd "${REPO_DIR}/apps/web"
+  sudo -u "${APP_USER}" -H npx next build
+fi
+
+echo ">> Chạy thử API 8 giây (bắt lỗi thật, không qua systemd)"
+set +e
+timeout 12s sudo -u "${APP_USER}" -H bash -c "set -a; . /etc/so-nhan/so-nhan.env; set +a; cd '${REPO_DIR}/apps/api'; '${NODE}' '${TSX}' src/main.ts" > /tmp/so-nhan-api-try.log 2>&1
+TRY=$?
+set -e
+echo "--- /tmp/so-nhan-api-try.log (exit ${TRY}) ---"
+tail -n 40 /tmp/so-nhan-api-try.log || true
+if ! grep -q "successfully started\|Nest application" /tmp/so-nhan-api-try.log; then
+  echo "API không start được khi chạy tay. Sửa lỗi trên rồi chạy lại."
+  echo "Gợi ý: sudo -u ${APP_USER} -H bash -c 'cd ${REPO_DIR}/apps/api && npx prisma generate'"
+  exit 1
+fi
+echo "  API chạy tay được. Viết systemd…"
 
 write_unit() {
-  local name="$1" dir="$2" cmd="$3"
+  local name="$1" dir="$2"
+  shift 2
   cat > "/etc/systemd/system/${name}.service" <<EOF
 [Unit]
 Description=${name}
@@ -262,31 +284,36 @@ After=network.target
 [Service]
 Type=simple
 User=${APP_USER}
-Group=${APP_USER}
 WorkingDirectory=${dir}
 EnvironmentFile=/etc/so-nhan/so-nhan.env
-ExecStart=${cmd}
+ExecStart=${NODE} $*
 Restart=on-failure
 RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${name}
 [Install]
 WantedBy=multi-user.target
 EOF
 }
 
-write_unit so-nhan-api "${REPO_DIR}/apps/api" "${NODE} ${TSX} src/main.ts"
-write_unit so-nhan-worker "${REPO_DIR}/apps/api" "${NODE} ${TSX} src/worker.ts"
-write_unit so-nhan-web "${REPO_DIR}/apps/web" "${NODE} ${NEXT} start -H 0.0.0.0 -p ${WEB_PORT}"
+write_unit so-nhan-api "${REPO_DIR}/apps/api" "${TSX}" src/main.ts
+write_unit so-nhan-worker "${REPO_DIR}/apps/api" "${TSX}" src/worker.ts
+write_unit so-nhan-web "${REPO_DIR}/apps/web" "${NEXT}" start -H 0.0.0.0 -p "${WEB_PORT}"
 
 systemctl daemon-reload
+systemctl reset-failed so-nhan-api so-nhan-worker so-nhan-web 2>/dev/null || true
 systemctl enable so-nhan-api so-nhan-worker so-nhan-web
 systemctl restart so-nhan-api so-nhan-worker so-nhan-web
+sleep 2
+echo "  api=$(systemctl is-active so-nhan-api) web=$(systemctl is-active so-nhan-web) worker=$(systemctl is-active so-nhan-worker)"
 
 echo ">> Chờ health"
 API_OK="000"
 WEB_OK="000"
-for _ in $(seq 1 20); do
-  API_OK="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${API_PORT}/api/health" || true)"
-  WEB_OK="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${WEB_PORT}/login" || true)"
+for _ in $(seq 1 15); do
+  API_OK="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${API_PORT}/api/health" 2>/dev/null || echo 000)"
+  WEB_OK="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${WEB_PORT}/login" 2>/dev/null || echo 000)"
   if [[ "${API_OK}" == "200" && "${WEB_OK}" =~ ^(200|307|308)$ ]]; then
     break
   fi
@@ -295,15 +322,13 @@ done
 
 if [[ "${API_OK}" != "200" || ! "${WEB_OK}" =~ ^(200|307|308)$ ]]; then
   echo
-  echo "===== LỖI: dịch vụ chưa nghe cổng ====="
-  echo "API health=${API_OK}  Web http=${WEB_OK}"
-  echo "--- so-nhan-api ---"
-  systemctl --no-pager -l status so-nhan-api || true
-  journalctl -u so-nhan-api -n 40 --no-pager || true
-  echo "--- so-nhan-web ---"
-  systemctl --no-pager -l status so-nhan-web || true
-  journalctl -u so-nhan-web -n 40 --no-pager || true
-  echo "Sửa xong code thì: cd ${REPO_DIR} && git pull && sudo bash deploy/cai-dat-vps.sh --fix"
+  echo "===== LỖI: systemd chưa nghe cổng ====="
+  echo "API health=${API_OK}  Web http=${WEB_OK}  active api=$(systemctl is-active so-nhan-api) web=$(systemctl is-active so-nhan-web)"
+  echo "--- journal so-nhan-api ---"
+  journalctl -u so-nhan-api -n 50 --no-pager || true
+  echo "--- journal so-nhan-web ---"
+  journalctl -u so-nhan-web -n 50 --no-pager || true
+  echo "Chạy tay: sudo systemctl status so-nhan-api so-nhan-web --no-pager"
   exit 1
 fi
 
