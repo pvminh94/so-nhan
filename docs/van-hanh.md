@@ -89,7 +89,15 @@ Không seed mặc định (seed xóa dữ liệu HRMS). Demo một lần:
 sudo bash deploy/cai-dat-vps.sh --seed
 ```
 
-Bí mật: `/etc/so-nhan/so-nhan.env`. Log cài: `/var/log/so-nhan-cai-dat.log`.
+Nếu cài xong mà `health=000` (curl không vào được):
+
+```bash
+cd ~/so-nhan
+git pull
+sudo bash deploy/cai-dat-vps.sh --fix
+```
+
+`--fix` chỉ viết lại systemd (chạy bằng user của bạn, gọi `node …/tsx` thẳng, không `npx`) rồi restart. Xem lỗi: `journalctl -u so-nhan-api -n 80`.
 
 ## Chạy local
 
