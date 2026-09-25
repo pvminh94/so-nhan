@@ -98,7 +98,7 @@ git pull
 sudo bash deploy/cai-dat-vps.sh --fix
 ```
 
-`--fix` cũng tự `chown` lại user đang cài, rồi viết systemd.
+Trình duyệt phải mở **đúng cổng web**, ví dụ `http://172.16.8.220:3001`. Gõ mỗi IP (cổng 80) sẽ *refused to connect*. Cổng 3000 là `bao_cao_tuan`. API (`4000`/`4001`) chỉ nghe localhost, không mở từ máy khác.
 
 ## Chạy local
 

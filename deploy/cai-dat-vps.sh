@@ -300,6 +300,7 @@ EOF
 write_unit so-nhan-api "${REPO_DIR}/apps/api" "${TSX}" src/main.ts
 write_unit so-nhan-worker "${REPO_DIR}/apps/api" "${TSX}" src/worker.ts
 write_unit so-nhan-web "${REPO_DIR}/apps/web" "${NEXT}" start -H 0.0.0.0 -p "${WEB_PORT}"
+sed -i "/EnvironmentFile=/a Environment=HOSTNAME=0.0.0.0\\nEnvironment=PORT=${WEB_PORT}" /etc/systemd/system/so-nhan-web.service
 
 systemctl daemon-reload
 systemctl reset-failed so-nhan-api so-nhan-worker so-nhan-web 2>/dev/null || true
@@ -332,22 +333,26 @@ if [[ "${API_OK}" != "200" || ! "${WEB_OK}" =~ ^(200|307|308)$ ]]; then
   exit 1
 fi
 
-if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+if command -v ufw >/dev/null 2>&1; then
   ufw allow "${WEB_PORT}/tcp" comment "So Nhan web" || true
 fi
 
 echo
 echo "===== XONG ====="
+echo "Mở trình duyệt ĐÚNG địa chỉ này (có cổng ${WEB_PORT}, không phải 80, không phải 3000):"
+echo
+echo "    http://${HOST_IP}:${WEB_PORT}"
+echo
 echo "User     : ${APP_USER}"
-echo "Postgres : ${PG_MODE}  database hrms (không đụng DB khác)"
-echo "API      : 127.0.0.1:${API_PORT}  health=${API_OK}"
-echo "Web      : http://${HOST_IP}:${WEB_PORT}  http=${WEB_OK}"
+echo "Postgres : ${PG_MODE}  database hrms"
+echo "API      : chỉ 127.0.0.1:${API_PORT} — không mở trên LAN, web proxy hộ"
+echo "Web bind : 0.0.0.0:${WEB_PORT}  health=${WEB_OK}"
 if [[ "${WEB_PORT}" != "3000" ]]; then
-  echo "Cổng 3000 giữ cho bao_cao_tuan. Sổ Nhân chạy ${WEB_PORT}."
+  echo "Cổng 3000 vẫn là bao_cao_tuan. Sổ Nhân là ${WEB_PORT}."
 fi
 echo "Bí mật   : /etc/so-nhan/so-nhan.env"
-echo "Lệnh     : systemctl status so-nhan-web so-nhan-api so-nhan-worker"
-echo "Log lỗi  : journalctl -u so-nhan-api -n 80"
+echo "Firewall : sudo ufw allow ${WEB_PORT}/tcp"
+echo "Kiểm tra : ss -tlnp | grep ${WEB_PORT}"
 if [[ ${SEED} -eq 1 ]]; then
   echo "Demo     : admin@sonhan.vn  /  Sonhan@2026"
 fi
