@@ -314,6 +314,30 @@ systemctl restart so-nhan-api so-nhan-worker so-nhan-web
 sleep 2
 echo "  api=$(systemctl is-active so-nhan-api) web=$(systemctl is-active so-nhan-web) worker=$(systemctl is-active so-nhan-worker)"
 
+cat > /etc/systemd/system/so-nhan-dong-bo.service <<EOF
+[Unit]
+Description=So Nhan keo GitHub
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=${REPO_DIR}/deploy/dong-bo.sh
+EOF
+cat > /etc/systemd/system/so-nhan-dong-bo.timer <<EOF
+[Unit]
+Description=So Nhan dong bo GitHub moi 2 phut
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+chmod +x "${REPO_DIR}/deploy/dong-bo.sh"
+systemctl daemon-reload
+systemctl enable --now so-nhan-dong-bo.timer
+echo "  dong-bo=$(systemctl is-active so-nhan-dong-bo.timer)  (tu keo GitHub, khong can git pull)"
+
 echo ">> Chờ health"
 API_OK="000"
 WEB_OK="000"
@@ -361,4 +385,5 @@ echo "Kiểm tra : ss -tlnp | grep ${WEB_PORT}"
 if [[ ${SEED} -eq 1 ]]; then
   echo "Demo     : admin@sonhan.vn  /  Sonhan@2026"
 fi
+echo "Đồng bộ  : timer so-nhan-dong-bo (mỗi 2 phút). Kéo ngay: sudo bash deploy/dong-bo.sh"
 echo "Sổ tay   : ${REPO_DIR}/docs/van-hanh.md"

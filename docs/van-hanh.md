@@ -27,7 +27,27 @@ Mật khẩu `Sonhan@2026`. Đổi trước khi có dữ liệu thật.
 
 Không commit `.env`. Không dán PAT vào remote URL.
 
-Sau khi `git pull` giao diện: `sudo bash deploy/cai-dat-vps.sh --fix` (có build lại web). Mở `http://IP:3001`, không mở trơn IP.
+## Đồng bộ VPS (không cần git pull)
+
+Lần đầu (gỡ kẹt `next-env.d.ts` nếu có):
+
+```bash
+cd /home/bvqy4/so-nhan
+git checkout -- apps/web/next-env.d.ts
+git pull
+sudo bash deploy/cai-dat-vps.sh
+```
+
+Sau đó máy **tự kéo GitHub mỗi 2 phút**, build và restart. Không seed. Không đụng cổng 3000. Xem:
+
+```bash
+systemctl status so-nhan-dong-bo.timer
+tail -n 40 /var/log/so-nhan-dong-bo.log
+```
+
+Kéo ngay: `sudo bash deploy/dong-bo.sh`.
+
+Mở `http://IP:3001`, không mở trơn IP.
 
 ## Lịch tháng
 
